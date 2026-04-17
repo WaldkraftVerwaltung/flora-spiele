@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1b2030">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Autorennen</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:linear-gradient(180deg,#232a42 0%,#1b2030 60%,#0f1320 100%);
+  color:#f1f5f9;min-height:100dvh;touch-action:manipulation;
+}
+button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+
+/* ── Szenen ── */
+.scene{display:none;padding:16px;min-height:100dvh;flex-direction:column;align-items:center;gap:14px}
+.scene.active{display:flex}
+
+h1{font-size:30px;margin:6px 0;text-align:center;letter-spacing:.5px}
+h2{font-size:18px;margin:2px 0;text-align:center;opacity:.85;font-weight:500}
+p{margin:4px 0;text-align:center}
+.sub{font-size:13px;opacity:.65}
+
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);
+  border-radius:18px;padding:16px;width:100%;max-width:460px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35)}
+
+.btn{background:linear-gradient(180deg,#ffca60,#ff8a1a);color:#3a2010;border:none;
+  border-radius:14px;padding:14px 18px;font-size:18px;font-weight:700;
+  box-shadow:0 4px 0 #c4670d,0 6px 14px rgba(0,0,0,.3);width:100%}
+.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #c4670d}
+
+/* ── Farbwahl ── */
+.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:10px}
+.swatch{aspect-ratio:1/1;border-radius:50%;border:3px solid rgba(255,255,255,.12);
+  cursor:pointer;box-shadow:inset 0 -6px 10px rgba(0,0,0,.25),0 3px 8px rgba(0,0,0,.3);
+  transition:transform .15s,border-color .15s}
+.swatch.sel{border-color:#fff;transform:scale(1.08)}
+
+/* ── Reifenwahl ── */
+.tires{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}
+.tire{background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.12);
+  border-radius:14px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;
+  gap:6px;cursor:pointer;transition:all .15s}
+.tire.sel{border-color:#ffca60;background:rgba(255,202,96,.12)}
+.tire svg{width:44px;height:44px}
+.tire .lbl{font-size:11px;font-weight:600;opacity:.9}
+
+/* ── Spiel-Scene ── */
+#game{padding:0;position:relative;overflow:hidden;background:#1b2030}
+#game canvas{display:block;width:100vw;height:100dvh;touch-action:none}
+.hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;
+  align-items:center;font-weight:700;pointer-events:none;
+  text-shadow:0 2px 6px rgba(0,0,0,.6)}
+.hud .speed{background:rgba(0,0,0,.35);padding:6px 12px;border-radius:10px;font-size:14px;
+  pointer-events:auto}
+.hud .back{background:rgba(0,0,0,.45);color:#fff;border:none;border-radius:10px;padding:6px 12px;
+  font-weight:700;font-size:14px;pointer-events:auto;cursor:pointer}
+
+/* Hinweis, wenn Handy nicht quer ist */
+.rotate-hint{position:absolute;inset:0;background:rgba(15,19,32,.92);display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;
+  text-align:center;z-index:10}
+.rotate-hint.show{display:flex}
+.rotate-hint svg{width:80px;height:80px;animation:turnhint 1.8s ease-in-out infinite}
+@keyframes turnhint{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
+
+/* Hup-Knopf rechts unten */
+.honk{position:absolute;right:18px;bottom:18px;width:74px;height:74px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#ff6b6b 0%,#e11d48 55%,#9f1239 100%);
+  border:3px solid #fecaca;box-shadow:0 6px 0 #7f1d1d,0 10px 20px rgba(0,0,0,.35);
+  color:#fff;font-weight:900;font-size:15px;letter-spacing:.5px;
+  display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer;
+  user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.honk:active{transform:translateY(3px);box-shadow:0 3px 0 #7f1d1d,0 6px 12px rgba(0,0,0,.35)}
+</style>
+</head>
+<body>
+
+<!-- ══════════ MENÜ ══════════ -->
+<section id="menu" class="scene active">
+  <h1>Autorennen</h1>
+  <h2>Such dir dein Auto aus</h2>
+
+  <div class="card">
+    <p style="font-weight:700;margin-bottom:4px">Farbe</p>
+    <div id="swatches" class="swatches"></div>
+  </div>
+
+  <div class="card">
+    <p style="font-weight:700;margin-bottom:4px">Reifen</p>
+    <div id="tires" class="tires"></div>
+  </div>
+
+  <div class="card">
+    <button id="startBtn" class="btn">Los geht's!</button>
+    <p class="sub" style="margin-top:10px">Handy anschließend quer halten und zum Lenken nach links/rechts neigen.</p>
+  </div>
+</section>
+
+<!-- ══════════ SPIEL ══════════ -->
+<section id="game" class="scene">
+  <canvas id="road"></canvas>
+  <div class="hud">
+    <button id="backBtn" class="back">‹ Menü</button>
+    <div class="speed" id="speed">0 km/h</div>
+  </div>
+  <button id="honkBtn" class="honk" aria-label="Hupe">HUP</button>
+  <div id="rotateHint" class="rotate-hint">
+    <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="18" y="6" width="28" height="52" rx="5"/>
+      <circle cx="32" cy="52" r="2" fill="#fff"/>
+    </svg>
+    <p style="font-size:18px;font-weight:700;margin:0">Bitte Handy quer halten</p>
+    <p class="sub">…dann geht's los.</p>
+  </div>
+</section>
+
+<script>
+// ══════════ Zustand ══════════
+const state = {
+  color: '#e11d48',
+  tire: 'normal'
+};
+
+const COLORS = [
+  '#e11d48', // rot
+  '#2563eb', // blau
+  '#16a34a', // grün
+  '#fbbf24', // gelb
+  '#ec4899', // pink
+  '#8b5cf6'  // lila
+];
+
+const TIRES = [
+  { id:'normal',  label:'Normal',  icon:tireIcon('normal')  },
+  { id:'sport',   label:'Sport',   icon:tireIcon('sport')   },
+  { id:'offroad', label:'Offroad', icon:tireIcon('offroad') },
+  { id:'stern',   label:'Sterne',  icon:tireIcon('stern')   }
+];
+
+function tireIcon(kind){
+  // kleine Vorschau-SVG-Symbole für die Reifenwahl
+  const ring = '<circle cx="22" cy="22" r="20" fill="#0f172a"/>';
+  const hub = '<circle cx="22" cy="22" r="7" fill="#94a3b8"/>';
+  let deco = '';
+  if(kind==='normal')  deco = '<circle cx="22" cy="22" r="14" fill="none" stroke="#475569" stroke-width="2"/>';
+  if(kind==='sport')   deco = '<g stroke="#facc15" stroke-width="2.5"><line x1="22" y1="8"  x2="22" y2="36"/><line x1="8"  y1="22" x2="36" y2="22"/><line x1="12" y1="12" x2="32" y2="32"/><line x1="32" y1="12" x2="12" y2="32"/></g>';
+  if(kind==='offroad') deco = '<g fill="#65a30d"><circle cx="22" cy="7"  r="2.5"/><circle cx="22" cy="37" r="2.5"/><circle cx="7"  cy="22" r="2.5"/><circle cx="37" cy="22" r="2.5"/><circle cx="11" cy="11" r="2.5"/><circle cx="33" cy="33" r="2.5"/><circle cx="33" cy="11" r="2.5"/><circle cx="11" cy="33" r="2.5"/></g>';
+  if(kind==='stern')   deco = '<text x="22" y="28" text-anchor="middle" font-size="20" fill="#f472b6">★</text>';
+  return `<svg viewBox="0 0 44 44">${ring}${deco}${hub}</svg>`;
+}
+
+// ══════════ Menü aufbauen ══════════
+const swatchEl = document.getElementById('swatches');
+COLORS.forEach((c,i)=>{
+  const d=document.createElement('div');
+  d.className='swatch'+(i===0?' sel':'');
+  d.style.background=c;
+  d.dataset.color=c;
+  d.addEventListener('click',()=>{
+    state.color=c;
+    swatchEl.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('sel',s.dataset.color===c));
+  });
+  swatchEl.appendChild(d);
+});
+
+const tiresEl = document.getElementById('tires');
+TIRES.forEach((t,i)=>{
+  const d=document.createElement('div');
+  d.className='tire'+(i===0?' sel':'');
+  d.dataset.tire=t.id;
+  d.innerHTML = t.icon + `<span class="lbl">${t.label}</span>`;
+  d.addEventListener('click',()=>{
+    state.tire=t.id;
+    tiresEl.querySelectorAll('.tire').forEach(s=>s.classList.toggle('sel',s.dataset.tire===t.id));
+  });
+  tiresEl.appendChild(d);
+});
+
+// ══════════ Szenenwechsel ══════════
+const menuScene = document.getElementById('menu');
+const gameScene = document.getElementById('game');
+function showScene(which){
+  menuScene.classList.toggle('active', which==='menu');
+  gameScene.classList.toggle('active', which==='game');
+}
+
+document.getElementById('backBtn').addEventListener('click',()=>{
+  stopGame();
+  showScene('menu');
+});
+
+// ══════════ Canvas + Render-Loop ══════════
+const canvas = document.getElementById('road');
+const ctx = canvas.getContext('2d');
+const speedEl = document.getElementById('speed');
+const rotateHint = document.getElementById('rotateHint');
+
+let W=0, H=0, DPR=1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+  canvas.width  = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+
+// Straßen-Zustand
+const world = {
+  running:false,
+  scroll:0,          // px für Fahrbahn-Animation
+  speed:240,         // px/s Scrollgeschwindigkeit
+  carX:0,            // 0..1 Position relativ zur Straße
+  tilt:0             // -1..+1 (Lenkwert)
+};
+
+function checkOrientation(){
+  // Landscape = Breite > Höhe. Wenn Portrait, Hinweis zeigen.
+  const portrait = H > W;
+  rotateHint.classList.toggle('show', portrait);
+  return !portrait;
+}
+
+// Straße + Gras + Fahrbahnmarkierungen zeichnen
+function drawRoad(dt){
+  // Hintergrund (Himmel oben, Gras seitlich)
+  ctx.fillStyle = '#3b5a2a';
+  ctx.fillRect(0,0,W,H);
+
+  // Straßenfläche (zentriert, ca. 65% der Breite)
+  const roadW = Math.min(W*0.7, 520);
+  const roadX = (W - roadW) / 2;
+  ctx.fillStyle = '#2a2f3d';
+  ctx.fillRect(roadX, 0, roadW, H);
+
+  // Randlinien (weiß)
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(roadX+3, 0); ctx.lineTo(roadX+3, H);
+  ctx.moveTo(roadX+roadW-3, 0); ctx.lineTo(roadX+roadW-3, H);
+  ctx.stroke();
+
+  // Gestrichelte Mittellinie — scrollt mit world.scroll
+  world.scroll = (world.scroll + world.speed * dt) % 80;
+  ctx.strokeStyle = '#fde047';
+  ctx.lineWidth = 6;
+  ctx.setLineDash([40, 40]);
+  ctx.lineDashOffset = -world.scroll;
+  ctx.beginPath();
+  ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Seitenstreifen-Gras-Deko (einfache Striche, scrollen auch)
+  ctx.fillStyle = '#264d18';
+  const stripeH = 40;
+  const off = world.scroll % stripeH;
+  for(let y = -stripeH + off; y < H; y += stripeH){
+    ctx.fillRect(0, y, roadX-6, 6);
+    ctx.fillRect(roadX+roadW+6, y, W-(roadX+roadW+6), 6);
+  }
+}
+
+// Auto zeichnen — Karosserie in state.color, Reifen je nach state.tire
+function drawCar(){
+  const roadW = Math.min(W*0.7, 520);
+  const roadX = (W - roadW) / 2;
+  const cx = roadX + roadW/2 + world.carX * (roadW/2 - 44);
+  const cy = H - 100;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  // leichte Lenkneigung visuell andeuten
+  ctx.rotate(world.tilt * 0.12);
+
+  const bodyW = 56, bodyH = 96;
+
+  // Schatten unter dem Auto
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, bodyH/2 + 6, bodyW*0.55, 8, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Reifen zuerst (damit Karosserie drüberliegt)
+  drawTire(-bodyW/2 - 2, -bodyH/2 + 14);   // vorne links
+  drawTire( bodyW/2 + 2, -bodyH/2 + 14);   // vorne rechts
+  drawTire(-bodyW/2 - 2,  bodyH/2 - 14);   // hinten links
+  drawTire( bodyW/2 + 2,  bodyH/2 - 14);   // hinten rechts
+
+  // Karosserie
+  ctx.fillStyle = state.color;
+  roundRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 12);
+  ctx.fill();
+
+  // Farb-Highlight links (Glanz)
+  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  roundRect(-bodyW/2 + 4, -bodyH/2 + 6, 8, bodyH - 12, 4);
+  ctx.fill();
+
+  // Frontscheibe (oben)
+  ctx.fillStyle = 'rgba(180,220,255,.85)';
+  roundRect(-bodyW/2 + 8, -bodyH/2 + 10, bodyW - 16, 22, 4);
+  ctx.fill();
+
+  // Heckscheibe (unten)
+  ctx.fillStyle = 'rgba(180,220,255,.7)';
+  roundRect(-bodyW/2 + 8, bodyH/2 - 30, bodyW - 16, 18, 4);
+  ctx.fill();
+
+  // Mittel-Karosserie (Dachlinie)
+  ctx.strokeStyle = 'rgba(0,0,0,.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-bodyW/2 + 4, 0);
+  ctx.lineTo( bodyW/2 - 4, 0);
+  ctx.stroke();
+
+  // Scheinwerfer vorne
+  ctx.fillStyle = '#fef9c3';
+  roundRect(-bodyW/2 + 6, -bodyH/2 + 2, 10, 5, 2); ctx.fill();
+  roundRect( bodyW/2 - 16, -bodyH/2 + 2, 10, 5, 2); ctx.fill();
+
+  // Rücklichter
+  ctx.fillStyle = '#b91c1c';
+  roundRect(-bodyW/2 + 6, bodyH/2 - 7, 10, 5, 2); ctx.fill();
+  roundRect( bodyW/2 - 16, bodyH/2 - 7, 10, 5, 2); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawTire(x, y){
+  ctx.save();
+  ctx.translate(x, y);
+  // Mantel
+  ctx.fillStyle = '#0f172a';
+  roundRect(-7, -10, 14, 20, 4);
+  ctx.fill();
+
+  // Reifenprofil je nach Variante
+  if(state.tire === 'normal'){
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    for(let i=-7;i<=7;i+=3){
+      ctx.beginPath(); ctx.moveTo(-6,i); ctx.lineTo(6,i); ctx.stroke();
+    }
+  } else if(state.tire === 'sport'){
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(-5, -1.5, 10, 3);
+    ctx.fillRect(-1.5, -8, 3, 16);
+  } else if(state.tire === 'offroad'){
+    ctx.fillStyle = '#65a30d';
+    for(let iy=-7; iy<=7; iy+=4){
+      ctx.beginPath(); ctx.arc(-3, iy, 1.8, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc( 3, iy, 1.8, 0, Math.PI*2); ctx.fill();
+    }
+  } else if(state.tire === 'stern'){
+    ctx.fillStyle = '#f472b6';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('★', 0, 0);
+  }
+
+  // Nabe
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x,   y+h, r);
+  ctx.arcTo(x,   y+h, x,   y,   r);
+  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.closePath();
+}
+
+// ══════════ Lenkung über DeviceOrientation ══════════
+// Lenk-Achse hängt von der Bildschirm-Orientierung ab.
+// Wir kalibrieren beim Spielstart auf 0, dann zählt nur die Differenz.
+const steer = {
+  baseline: null,   // Startwert beim Kalibrieren
+  raw: 0,           // aktueller Rohwert (Grad)
+  enabled: false
+};
+
+function orientationAngle(){
+  if(screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+  return window.orientation || 0;
+}
+
+// Nimmt das passende Achsen-Grad (gamma oder beta) je nach Landscape-Seite.
+function tiltFromEvent(e){
+  const a = orientationAngle();
+  // Portrait-Fallback: gamma (links-rechts-Neigung)
+  if(a === 0)    return e.gamma || 0;
+  if(a === 180)  return -(e.gamma || 0);
+  // Landscape: die Rotation ums "Lenkrad" liegt auf beta — Vorzeichen je nach Seite
+  if(a === 90)   return -(e.beta || 0);   // Home-Taste rechts
+  if(a === 270 || a === -90) return (e.beta || 0);
+  return e.gamma || 0;
+}
+
+function onDeviceOrientation(e){
+  const t = tiltFromEvent(e);
+  if(steer.baseline === null) steer.baseline = t;
+  steer.raw = t - steer.baseline;
+}
+
+async function enableTilt(){
+  // iOS 13+ benötigt explizite Permission durch User-Geste
+  if(typeof DeviceOrientationEvent !== 'undefined'
+     && typeof DeviceOrientationEvent.requestPermission === 'function'){
+    try{
+      const res = await DeviceOrientationEvent.requestPermission();
+      if(res !== 'granted') return false;
+    }catch{ return false; }
+  }
+  if(!steer.enabled){
+    window.addEventListener('deviceorientation', onDeviceOrientation, true);
+    steer.enabled = true;
+  }
+  steer.baseline = null; // beim nächsten Event neu kalibrieren
+  return true;
+}
+
+// Lenkwert pro Frame in world.carX einfließen lassen
+function applySteering(dt){
+  // ~20° Vollausschlag → tilt = ±1
+  const MAX_DEG = 20;
+  const t = Math.max(-1, Math.min(1, steer.raw / MAX_DEG));
+  world.tilt = world.tilt + (t - world.tilt) * Math.min(1, dt * 10); // sanftes Nachführen
+
+  // Lenkung wirkt auf Seitenposition; Geschwindigkeit ist fix.
+  world.carX += world.tilt * dt * 1.6;
+  // An Fahrbahnränder clampen
+  world.carX = Math.max(-1, Math.min(1, world.carX));
+}
+
+// Haupt-Loop
+let lastT = 0, rafId = 0;
+function loop(ts){
+  if(!world.running) return;
+  const dt = Math.min(0.05, (ts - lastT) / 1000 || 0);
+  lastT = ts;
+
+  checkOrientation();
+  applySteering(dt);
+  drawRoad(dt);
+  drawCar();
+
+  speedEl.textContent = Math.round(world.speed * 0.6) + ' km/h';
+  rafId = requestAnimationFrame(loop);
+}
+
+async function startGame(){
+  // Permission für Sensoren direkt aus der User-Geste heraus anfragen
+  await enableTilt();
+
+  showScene('game');
+  requestAnimationFrame(()=>{ // nach Layout messen
+    resize();
+    world.running = true;
+    world.scroll = 0;
+    world.carX = 0;
+    world.tilt = 0;
+    steer.baseline = null;
+    lastT = performance.now();
+    rafId = requestAnimationFrame(loop);
+  });
+}
+
+function stopGame(){
+  world.running = false;
+  cancelAnimationFrame(rafId);
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+
+// ══════════ Hupe (Web Audio) ══════════
+let audioCtx = null;
+function honk(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+
+    const now = audioCtx.currentTime;
+    // Zwei leicht versetzte Sägezahn-Töne → klassischer Auto-Hupton
+    const freqs = [420, 520];
+    freqs.forEach((f, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.value = f;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+      gain.gain.setValueAtTime(0.18, now + 0.28);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.42);
+    });
+  }catch(err){ /* stumm weiter */ }
+}
+
+const honkBtn = document.getElementById('honkBtn');
+// pointerdown deckt Maus und Touch ab — click explizit unterdrücken, damit nicht doppelt
+honkBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); honk(); });
+honkBtn.addEventListener('click', (e)=>{ e.preventDefault(); });
+
+// ══════════ Service Worker (PWA) ══════════
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(()=>{});
+  });
+}
+
+// Landscape-Lock versuchen (klappt nur im installierten/fullscreen-PWA-Kontext)
+function tryLockLandscape(){
+  try{
+    if(screen.orientation && screen.orientation.lock){
+      screen.orientation.lock('landscape').catch(()=>{});
+    }
+  }catch{}
+}
+// Beim Start versuchen — scheitert auf iOS, das ist ok (Nutzer dreht manuell)
+document.getElementById('startBtn').addEventListener('click', tryLockLandscape);
+</script>
+</body>
+</html>
