@@ -53,7 +53,7 @@ const MIME = {
 // Einfacher statischer Dateiserver mit Pfad-Escape-Schutz
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (p === '/') p = '/index.html';
+  if (p.endsWith('/')) p += 'index.html';
   const fp = path.normalize(path.join(PUBLIC, p));
   if (!fp.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(fp, (err, data) => {
