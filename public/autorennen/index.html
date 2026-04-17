@@ -99,7 +99,7 @@ p{margin:4px 0;text-align:center}
 
   <div class="card">
     <button id="startBtn" class="btn">Los geht's!</button>
-    <p class="sub" style="margin-top:10px">Handy anschließend quer halten und zum Lenken nach links/rechts neigen.</p>
+    <p class="sub" style="margin-top:10px">Tipp: Halte das Handy quer, dann geht's von selbst los. Zum Lenken nach links/rechts neigen.</p>
   </div>
 </section>
 
@@ -127,6 +127,18 @@ const state = {
   color: '#e11d48',
   tire: 'normal'
 };
+
+// Letzte Auswahl merken, damit Auto-Start beim nächsten Mal das richtige Auto nimmt
+try {
+  const saved = JSON.parse(localStorage.getItem('autorennen.state') || 'null');
+  if (saved && typeof saved === 'object') {
+    if (saved.color) state.color = saved.color;
+    if (saved.tire)  state.tire  = saved.tire;
+  }
+} catch {}
+function persistState(){
+  try { localStorage.setItem('autorennen.state', JSON.stringify(state)); } catch {}
+}
 
 const COLORS = [
   '#e11d48', // rot
@@ -158,27 +170,29 @@ function tireIcon(kind){
 
 // ══════════ Menü aufbauen ══════════
 const swatchEl = document.getElementById('swatches');
-COLORS.forEach((c,i)=>{
+COLORS.forEach((c)=>{
   const d=document.createElement('div');
-  d.className='swatch'+(i===0?' sel':'');
+  d.className='swatch'+(c===state.color?' sel':'');
   d.style.background=c;
   d.dataset.color=c;
   d.addEventListener('click',()=>{
     state.color=c;
     swatchEl.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('sel',s.dataset.color===c));
+    persistState();
   });
   swatchEl.appendChild(d);
 });
 
 const tiresEl = document.getElementById('tires');
-TIRES.forEach((t,i)=>{
+TIRES.forEach((t)=>{
   const d=document.createElement('div');
-  d.className='tire'+(i===0?' sel':'');
+  d.className='tire'+(t.id===state.tire?' sel':'');
   d.dataset.tire=t.id;
   d.innerHTML = t.icon + `<span class="lbl">${t.label}</span>`;
   d.addEventListener('click',()=>{
     state.tire=t.id;
     tiresEl.querySelectorAll('.tire').forEach(s=>s.classList.toggle('sel',s.dataset.tire===t.id));
+    persistState();
   });
   tiresEl.appendChild(d);
 });
@@ -491,6 +505,27 @@ function stopGame(){
 }
 
 document.getElementById('startBtn').addEventListener('click', startGame);
+
+// ══════════ Auto-Start wenn Handy quer ══════════
+// Wenn der Nutzer das Handy (schon oder nach dem Öffnen) quer hält und im
+// Menü ist, Spiel automatisch starten — er muss nicht erst „Los geht's" tippen.
+// Pro Seitenaufruf nur einmal: wer über „‹ Menü" zurückkommt, tippt wieder
+// manuell, damit er seine Auswahl ändern kann.
+let autoStartUsed = false;
+function tryAutoStart(){
+  if (autoStartUsed) return;
+  if (!menuScene.classList.contains('active')) return;
+  if (window.innerWidth <= window.innerHeight) return; // Portrait → nichts tun
+  autoStartUsed = true;
+  // Kleiner Moment, damit man beim Öffnen noch eben die Farbe wechseln kann
+  setTimeout(()=>{
+    if (menuScene.classList.contains('active') && window.innerWidth > window.innerHeight) {
+      startGame();
+    }
+  }, 900);
+}
+window.addEventListener('load', tryAutoStart);
+window.addEventListener('orientationchange', () => setTimeout(tryAutoStart, 300));
 
 // ══════════ Hupe (Web Audio) ══════════
 let audioCtx = null;
