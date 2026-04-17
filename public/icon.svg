@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Hintergrund: Rasen -->
+  <rect width="512" height="512" rx="96" fill="#7ec14a"/>
+  <!-- Sonne -->
+  <circle cx="420" cy="92" r="46" fill="#ffd84d"/>
+  <!-- Ballon rot -->
+  <ellipse cx="170" cy="230" rx="62" ry="78" fill="#e33a3a"/>
+  <path d="M 170 308 L 165 330 L 175 330 Z" fill="#7a1a1a"/>
+  <path d="M 170 330 Q 150 370 180 400 Q 210 430 170 470" stroke="#3a2010" stroke-width="4" fill="none"/>
+  <!-- Ballon lila -->
+  <ellipse cx="330" cy="260" rx="56" ry="72" fill="#9849c4"/>
+  <path d="M 330 332 L 325 352 L 335 352 Z" fill="#4a1e66"/>
+  <path d="M 330 352 Q 310 392 340 420 Q 370 450 330 478" stroke="#3a2010" stroke-width="4" fill="none"/>
+  <!-- Ballon orange klein -->
+  <ellipse cx="256" cy="400" rx="38" ry="50" fill="#ff953a"/>
+  <!-- Reflex-Highlights -->
+  <ellipse cx="150" cy="200" rx="16" ry="26" fill="#ffffff" opacity="0.45"/>
+  <ellipse cx="312" cy="232" rx="14" ry="22" fill="#ffffff" opacity="0.45"/>
+</svg>

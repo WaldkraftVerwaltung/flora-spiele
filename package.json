@@ -1,0 +1,8 @@
+{
+  "name": "ballongarten",
+  "version": "1.0.0",
+  "description": "Zwei-Spieler Ballon-Schiffeversenken mit Geburtstagsflair",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.16.0" }
+}
