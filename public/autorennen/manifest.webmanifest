@@ -1,0 +1,15 @@
+{
+  "name": "Autorennen",
+  "short_name": "Autorennen",
+  "description": "Neige dein Handy zum Lenken — ein kleines Autorennen zum Mitspielen",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#1b2030",
+  "theme_color": "#1b2030",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
