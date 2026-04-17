@@ -1,6 +1,6 @@
 // Service Worker für Autorennen — Offline-Shell + Stale-While-Revalidate
 // Cache-Nummer hochzählen, wenn Kern-Dateien sich ändern.
-const CACHE = 'autorennen-v1';
+const CACHE = 'autorennen-v2';
 const ASSETS = [
   './',
   './index.html',

@@ -212,6 +212,9 @@ function resize(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 window.addEventListener('resize', resize);
+// orientationchange feuert auf Mobile zuverlässiger als resize beim Drehen.
+// kleine Verzögerung, weil iOS die neuen Maße erst nach dem Event liefert.
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 // Straßen-Zustand
 const world = {
@@ -223,8 +226,9 @@ const world = {
 };
 
 function checkOrientation(){
-  // Landscape = Breite > Höhe. Wenn Portrait, Hinweis zeigen.
-  const portrait = H > W;
+  // Direkt window.innerWidth/Height verwenden — zuverlässiger als
+  // canvas.clientWidth (das kann beim ersten Frame noch 0 sein).
+  const portrait = window.innerHeight > window.innerWidth;
   rotateHint.classList.toggle('show', portrait);
   return !portrait;
 }
