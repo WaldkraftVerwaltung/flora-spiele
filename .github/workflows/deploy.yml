@@ -21,7 +21,10 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H 37.27.248.253 >> ~/.ssh/known_hosts
-          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || { echo "Key ungültig"; exit 1; }
+          echo "Public key abgeleitet aus dem Secret:"
+          ssh-keygen -y -f ~/.ssh/deploy_key
+          echo "Fingerprint:"
+          ssh-keygen -lf ~/.ssh/deploy_key
 
       - name: Sync code to server
         run: |
