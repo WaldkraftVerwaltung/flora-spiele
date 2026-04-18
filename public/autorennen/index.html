@@ -72,6 +72,60 @@ p{margin:4px 0;text-align:center}
 .rotate-hint svg{width:80px;height:80px;animation:turnhint 1.8s ease-in-out infinite}
 @keyframes turnhint{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
 
+/* POS-Anzeige oben links */
+.hud .pos-wrap{background:linear-gradient(180deg,#1f2937,#0f172a);border-radius:12px;padding:6px 14px;
+  pointer-events:auto;display:flex;flex-direction:column;align-items:center;min-width:68px;
+  box-shadow:0 4px 10px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08)}
+.hud .pos-label{font-size:10px;letter-spacing:2px;opacity:.7}
+.hud .pos-val{font-size:22px;font-weight:900;line-height:1}
+
+/* Fortschrittsbalken oben zentriert */
+.progress-wrap{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:6px;pointer-events:none;z-index:6;
+  width:min(60vw,360px)}
+.progress-bar{flex:1;height:10px;background:rgba(0,0,0,.45);border-radius:5px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.12)}
+.progress-fill{height:100%;width:0;background:linear-gradient(90deg,#22c55e,#fbbf24,#ef4444);
+  transition:width .15s ease-out;border-radius:5px}
+.progress-flag{font-size:16px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+
+/* Start-Overlay mit großem Knopf */
+.start-overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;z-index:9;background:rgba(10,14,24,.45);backdrop-filter:blur(2px);pointer-events:auto}
+.start-overlay.show{display:flex}
+.race-start-btn{
+  width:clamp(160px, 30vmin, 230px); height:clamp(160px, 30vmin, 230px);
+  border-radius:50%; border:6px solid rgba(255,255,255,.85);
+  background:radial-gradient(circle at 35% 30%,#4ade80 0%,#22c55e 55%,#166534 100%);
+  color:#fff; font-size:44px; font-weight:900; letter-spacing:3px;
+  box-shadow:0 10px 0 #14532d, 0 16px 32px rgba(0,0,0,.5);
+  cursor:pointer; touch-action:manipulation
+}
+.race-start-btn:active{transform:translateY(4px);box-shadow:0 6px 0 #14532d, 0 10px 22px rgba(0,0,0,.45)}
+
+/* Countdown-Ziffer in der Mitte */
+.countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  z-index:9;pointer-events:none}
+.countdown.show{display:flex}
+.countdown span{font-size:clamp(90px, 20vmin, 180px);font-weight:900;color:#fff;
+  text-shadow:0 6px 0 #0f172a, 0 10px 30px rgba(0,0,0,.6);animation:cd .9s ease-out forwards}
+@keyframes cd{
+  0%{transform:scale(1.6);opacity:0}
+  20%{transform:scale(1);opacity:1}
+  80%{transform:scale(1);opacity:1}
+  100%{transform:scale(0.7);opacity:0}
+}
+
+/* Ziel-Overlay */
+.finish-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  z-index:9;background:rgba(10,14,24,.65);backdrop-filter:blur(4px);pointer-events:auto;padding:20px}
+.finish-overlay.show{display:flex}
+.finish-card{background:rgba(30,40,60,.95);border:1px solid rgba(255,255,255,.12);
+  border-radius:18px;padding:22px 26px;max-width:420px;width:100%;text-align:center;
+  box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.finish-card h2{font-size:30px;margin:0 0 4px;letter-spacing:.5px}
+.finish-card .btn{width:auto;padding:12px 22px}
+
 /* Hup-Knopf rechts unten */
 .honk{position:absolute;right:18px;bottom:18px;width:74px;height:74px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#ff6b6b 0%,#e11d48 55%,#9f1239 100%);
@@ -108,15 +162,23 @@ p{margin:4px 0;text-align:center}
 <!-- ══════════ SPIEL ══════════ -->
 <section id="game" class="scene">
   <canvas id="road"></canvas>
+
   <div class="hud">
     <button id="backBtn" class="back">‹ Menü</button>
+    <div class="pos-wrap"><span class="pos-label">POS</span> <span id="pos" class="pos-val">—</span></div>
     <div class="stats">
-      <div class="stat" id="dist">0 m</div>
-      <div class="stat" id="passed">0 ⚡</div>
       <div class="stat" id="speed">0 km/h</div>
     </div>
   </div>
+
+  <!-- Fortschrittsbalken: wie weit bin ich auf der Strecke -->
+  <div class="progress-wrap">
+    <div class="progress-bar"><div id="progress" class="progress-fill"></div></div>
+    <div class="progress-flag">🏁</div>
+  </div>
+
   <button id="honkBtn" class="honk" aria-label="Hupe">HUP</button>
+
   <div id="rotateHint" class="rotate-hint">
     <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
       <rect x="18" y="6" width="28" height="52" rx="5"/>
@@ -124,6 +186,24 @@ p{margin:4px 0;text-align:center}
     </svg>
     <p style="font-size:18px;font-weight:700;margin:0">Bitte Handy quer halten</p>
     <p class="sub">…dann geht's los.</p>
+  </div>
+
+  <!-- Start-Overlay: großer GO-Knopf, bevor das Rennen losgeht -->
+  <div id="startOverlay" class="start-overlay show">
+    <button id="raceStartBtn" class="race-start-btn">START</button>
+    <p class="sub" style="margin-top:10px;opacity:.8">Handy quer halten und losdrücken</p>
+  </div>
+
+  <!-- Countdown 3…2…1…LOS -->
+  <div id="countdown" class="countdown"></div>
+
+  <!-- Ergebnis-Overlay am Ziel -->
+  <div id="finishOverlay" class="finish-overlay">
+    <div class="finish-card">
+      <h2 id="finishPlace">1. Platz!</h2>
+      <p id="finishTime" class="sub"></p>
+      <button id="restartBtn" class="btn" style="margin-top:14px">Nochmal</button>
+    </div>
   </div>
 </section>
 
@@ -236,26 +316,72 @@ window.addEventListener('resize', resize);
 // kleine Verzögerung, weil iOS die neuen Maße erst nach dem Event liefert.
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
-// Straßen-Zustand
-const BASE_SPEED = 260;
-const LANES = [-0.55, 0, 0.55];   // drei Spuren relativ zur Straßenmitte (-1..+1)
-const SCROLL_FACTOR = 0.0035;     // wie schnell z-Werte pro px/s wandern
-const HORIZON_RATIO = 0.38;
+// ══════════ Rennen-Zustand ══════════
+// Drei Spuren auf einer breiten Strecke. Die Spielfigur steuert über carX,
+// Gegner haben feste Spuren. Alle haben eine "distance" entlang der
+// Rennstrecke (0 am Start, TRACK_LENGTH am Ziel).
+const BASE_SPEED    = 240;         // typische Spieler-Zielgeschwindigkeit (Units/s)
+const LANES         = [-0.65, 0, 0.65];
+const SCROLL_FACTOR = 0.0022;      // Wie schnell Welt an Kamera vorbeirauscht
+const HORIZON_RATIO = 0.42;
+const TRACK_LENGTH  = 1400;
+
 const world = {
   running:false,
-  scroll:0,             // 0..1 Scrollphase
-  speed:BASE_SPEED,
-  carX:0,               // -1..1 Position der Kamera auf der Fahrbahn
-  tilt:0,               // -1..+1 (Lenkwert, geglättet)
-  obstacles:[],         // {lane, z, type:'car'|'cone', color?, passed, hit}
-  spawnTimer:1.0,
-  distance:0,
-  passed:0,
+  phase:'start',          // 'start' | 'countdown' | 'racing' | 'finished'
+  countdown:0,            // verbleibende Sekunden im Countdown
+  scroll:0,
+  carX:0,                 // -1..+1 Lateral-Position
+  tilt:0,
+  // Spieler:
+  playerDistance:0,
+  playerSpeed:0,
+  playerTargetSpeed:BASE_SPEED,
+  // Gegner — werden beim Start in Lanes sortiert platziert
+  opponents:[],
+  // Pylonen (nicht-Auto-Hindernisse), vorgeneriert:
+  cones:[],
   flash:0,
-  hitCooldown:0
+  hitCooldown:0,
+  raceTime:0,
+  finishResult:null       // {place, time}
 };
 
 const CAR_COLORS = ['#2563eb','#16a34a','#f59e0b','#8b5cf6','#ec4899','#64748b'];
+
+function initRace(){
+  // Gegner auf die drei Spuren verteilen, leicht gestaffelt. Vier
+  // Gegner ergibt Positionen 1–5 (inkl. Spieler). Jeder hat seine
+  // Grundgeschwindigkeit und ein leichtes Rauschen, damit sich das
+  // Ranking während des Rennens verschiebt.
+  // Startgrid: zwei Reihen links+rechts vom Spieler, sodass der Spieler in
+  // der Mittelspur hinter dem Feld startet und aufholen muss.
+  world.opponents = [
+    { lane:LANES[0], distance: 24, baseSpeed: 236, speed:0, color:'#2563eb', phase:Math.random()*Math.PI*2 },
+    { lane:LANES[2], distance: 24, baseSpeed: 232, speed:0, color:'#ef4444', phase:Math.random()*Math.PI*2 },
+    { lane:LANES[0], distance: 48, baseSpeed: 228, speed:0, color:'#a855f7', phase:Math.random()*Math.PI*2 },
+    { lane:LANES[2], distance: 48, baseSpeed: 240, speed:0, color:'#f59e0b', phase:Math.random()*Math.PI*2 }
+  ];
+  // Pylonen pseudo-random über die Strecke verteilen — nicht zu dicht,
+  // nicht direkt am Start.
+  world.cones = [];
+  let d = 120;
+  while (d < TRACK_LENGTH - 60){
+    const lane = LANES[Math.floor(Math.random() * LANES.length)];
+    world.cones.push({ lane, distance: d, hit:false });
+    d += 55 + Math.random() * 80;
+  }
+  world.playerDistance = 0;
+  world.playerSpeed = 0;
+  world.carX = LANES[1]; // Spieler startet in Mittelspur
+  world.tilt = 0;
+  world.scroll = 0;
+  world.flash = 0;
+  world.hitCooldown = 0;
+  world.raceTime = 0;
+  world.finishResult = null;
+  steer.baseline = null;
+}
 
 function checkOrientation(){
   const portrait = window.innerHeight > window.innerWidth;
@@ -264,19 +390,26 @@ function checkOrientation(){
 }
 
 // ══════════ Pseudo-3D-Projektion ══════════
-// z: 1 = am Horizont (weit weg), 0 = direkt am Auto, <0 = hinter dem Fahrer.
+// z: 1 = Horizont, 0 = direkt an der Kamera, <0 = schon hinter dem Fahrer.
 // laneRel: relative Spur zur Kamera (nach Abzug von world.carX).
+const VISION_RANGE = 280; // wie weit wir nach vorn schauen (in Distance-Units)
 function project(laneRel, z){
   const hy = H * HORIZON_RATIO;
-  const nz = Math.max(0, 1 - z);                 // 0 = fern, 1 = nah
-  const depth = Math.pow(nz, 1.35);              // perspektivische Verzerrung
+  const nz = Math.max(0, 1 - z);
+  const depth = Math.pow(nz, 1.35);
   const y = hy + (H - hy + 30) * depth;
-  const roadHalfBase = Math.min(W * 0.48, 420);
-  const roadHalfTop  = 18;
+  // Straße deutlich breiter als vorher (~2× die alte Breite)
+  const roadHalfBase = Math.min(W * 0.72, 620);
+  const roadHalfTop  = 20;
   const roadHalf = roadHalfTop + (roadHalfBase - roadHalfTop) * depth;
   const x = W/2 + laneRel * roadHalf;
   const scale = 0.08 + depth * 0.92;
   return { x, y, scale, roadHalf };
+}
+
+// Welt-Distanz → z-Wert relativ zum Spieler
+function distanceToZ(distance){
+  return (distance - world.playerDistance) / VISION_RANGE;
 }
 
 // Straße, Himmel, Gras — in Segmenten, damit scrollende Streifen Bewegung zeigen
@@ -355,10 +488,99 @@ function drawRoad(dt){
   }
 }
 
-// ══════════ Cockpit / Armaturenbrett ══════════
-// Der Spieler sitzt hinter dem Lenkrad: unten ein gewölbtes Haubenstück in
-// der Wunschfarbe, darüber eine dunkle Dashboard-Leiste und ein
-// angedeutetes Lenkrad, das sich mit dem Lenkwert dreht.
+// ══════════ Ziellinie ══════════
+// Wenn das Ziel in Sichtweite ist, über die Straße ein schwarz-weißes
+// Karomuster zeichnen.
+function drawFinishLine(){
+  const z = distanceToZ(TRACK_LENGTH);
+  if (z > 1 || z < -0.1) return;
+  const pN = project(0, Math.max(0.001, z));
+  const pF = project(0, Math.max(0.001, z + 0.04));
+  const yN = pN.y, yF = pF.y;
+  const hN = pN.roadHalf, hF = pF.roadHalf;
+  const camShift = -world.carX * 0.15;
+  const xN = W/2 + camShift * hN, xF = W/2 + camShift * hF;
+
+  // Kariertes Muster in ~10 Feldern
+  const cols = 10;
+  for (let c = 0; c < cols; c++){
+    ctx.fillStyle = (c & 1) ? '#111827' : '#f8fafc';
+    const t1 = c / cols, t2 = (c + 1) / cols;
+    const x1N = xN - hN + t1 * hN * 2;
+    const x2N = xN - hN + t2 * hN * 2;
+    const x1F = xF - hF + t1 * hF * 2;
+    const x2F = xF - hF + t2 * hF * 2;
+    ctx.beginPath();
+    ctx.moveTo(x1N, yN); ctx.lineTo(x2N, yN);
+    ctx.lineTo(x2F, yF); ctx.lineTo(x1F, yF);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// ══════════ Spieler-Auto (von hinten, im Vordergrund) ══════════
+// Wie in klassischen Arcade-Racern: Auto bleibt unten Mitte stehen, lehnt
+// leicht zur Seite beim Lenken. Farbe = Wunschfarbe.
+function drawPlayerCar(){
+  const carW = Math.min(W * 0.22, 180);
+  const carH = carW * 0.9;
+  const cx = W/2 + world.tilt * (W * 0.08);
+  const cy = H - Math.min(H * 0.32, 210) - carH * 0.15;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(world.tilt * 0.08);
+
+  // Schatten
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  ctx.beginPath();
+  ctx.ellipse(0, carH/2 + 10, carW*0.55, 12, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Reifen
+  ctx.fillStyle = '#0f172a';
+  roundRect(-carW/2 - 8, -carH/2 + 18, 16, 28, 4); ctx.fill();
+  roundRect( carW/2 - 8, -carH/2 + 18, 16, 28, 4); ctx.fill();
+  roundRect(-carW/2 - 8,  carH/2 - 46, 16, 28, 4); ctx.fill();
+  roundRect( carW/2 - 8,  carH/2 - 46, 16, 28, 4); ctx.fill();
+
+  // Karosserie mit Verlauf
+  const grad = ctx.createLinearGradient(-carW/2, 0, carW/2, 0);
+  grad.addColorStop(0,   shade(state.color, -0.15));
+  grad.addColorStop(0.5, state.color);
+  grad.addColorStop(1,   shade(state.color, -0.15));
+  ctx.fillStyle = grad;
+  roundRect(-carW/2, -carH/2, carW, carH, 18); ctx.fill();
+
+  // Heckscheibe
+  ctx.fillStyle = 'rgba(180,220,255,.8)';
+  roundRect(-carW/2 + 18, -carH/2 + 12, carW - 36, carH * 0.3, 8); ctx.fill();
+
+  // Kofferraum-Trennung
+  ctx.strokeStyle = 'rgba(0,0,0,.25)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-carW/2 + 10, carH * 0.08); ctx.lineTo(carW/2 - 10, carH * 0.08); ctx.stroke();
+
+  // Spoiler-Andeutung
+  ctx.fillStyle = shade(state.color, -0.25);
+  roundRect(-carW/2 + 4, -carH/2 + carH * 0.42, carW - 8, 6, 3); ctx.fill();
+
+  // Rücklichter
+  ctx.fillStyle = '#f87171';
+  roundRect(-carW/2 + 12, carH/2 - 22, 28, 10, 3); ctx.fill();
+  roundRect( carW/2 - 40, carH/2 - 22, 28, 10, 3); ctx.fill();
+
+  // Auspuff
+  ctx.fillStyle = '#1f2937';
+  roundRect(-12, carH/2 - 8, 24, 8, 3); ctx.fill();
+
+  // Kennzeichen
+  ctx.fillStyle = '#e5e7eb';
+  roundRect(-22, carH/2 - 24, 44, 12, 3); ctx.fill();
+
+  ctx.restore();
+}
+
+// ══════════ Cockpit (Hood-Streifen am unteren Rand) ══════════
 function drawDashboard(){
   const dashH   = Math.min(H * 0.32, 200);
   const dashTop = H - dashH;
@@ -442,76 +664,142 @@ function roundRect(x,y,w,h,r){
   ctx.closePath();
 }
 
-// ══════════ Hindernisse & Gegner-Autos (z-basiert) ══════════
-function spawnObstacle(){
-  const lane = LANES[Math.floor(Math.random() * LANES.length)];
-  // Mindestabstand in der gleichen Spur
-  for (const o of world.obstacles){
-    if (o.lane === lane && o.z > 0.8) return;
-  }
-  const isCone = Math.random() < 0.35;
-  world.obstacles.push({
-    lane,
-    z: 1,
-    type: isCone ? 'cone' : 'car',
-    color: isCone ? null : CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
-    passed: false,
-    hit: false
-  });
-}
+// ══════════ Rennen-Update: Spieler + Gegner + Pylonen ══════════
+function updateRace(dt){
+  if (world.phase === 'start') return; // alles steht
+  if (world.phase === 'countdown') return;
+  if (world.phase === 'finished') return;
 
-function updateObstacles(dt){
-  world.spawnTimer -= dt;
-  if (world.spawnTimer <= 0){
-    spawnObstacle();
-    world.spawnTimer = 0.8 + Math.random() * 0.7;
+  world.raceTime += dt;
+
+  // Spieler beschleunigt/verzögert sanft auf Zielgeschwindigkeit
+  world.playerSpeed += (world.playerTargetSpeed - world.playerSpeed) * Math.min(1, dt * 1.6);
+  world.playerDistance += world.playerSpeed * dt * 0.18;
+
+  // Gegner — Zielgeschwindigkeit schwankt sanft (sinus + phase)
+  for (const o of world.opponents){
+    const targetSpeed = o.baseSpeed + Math.sin(world.raceTime * 0.6 + o.phase) * 14;
+    o.speed += (targetSpeed - o.speed) * Math.min(1, dt * 1.4);
+    o.distance += o.speed * dt * 0.18;
   }
-  // z von 1 → 0 → negativ (hinter Kamera)
-  for (const o of world.obstacles) o.z -= world.speed * dt * SCROLL_FACTOR;
 
   if (world.hitCooldown > 0) world.hitCooldown -= dt;
 
-  for (const o of world.obstacles){
-    if (o.hit) continue;
-    if (o.z > 0.15 || o.z < -0.2) continue;
-    if (Math.abs(o.lane - world.carX) < 0.28){
-      o.hit = true;
+  // Kollision mit Pylonen (innerhalb kurzer Distanz + gleiche Spur)
+  for (const c of world.cones){
+    if (c.hit) continue;
+    const dz = c.distance - world.playerDistance;
+    if (dz < -6 || dz > 14) continue;
+    if (Math.abs(c.lane - world.carX) < 0.25){
+      c.hit = true;
       if (world.hitCooldown <= 0){
-        world.speed = Math.max(130, world.speed - 70);
+        world.playerSpeed = Math.max(100, world.playerSpeed - 90);
         world.flash = 0.35;
-        world.hitCooldown = 0.4;
+        world.hitCooldown = 0.5;
       }
     }
   }
 
-  world.obstacles = world.obstacles.filter(o => {
-    if (o.z < -0.15){
-      if (!o.passed && !o.hit){ o.passed = true; world.passed++; }
-      return false;
+  // Kollision mit Gegner-Auto (führt ebenso zu Bremsen)
+  for (const o of world.opponents){
+    const dz = o.distance - world.playerDistance;
+    if (dz < -4 || dz > 12) continue;
+    if (Math.abs(o.lane - world.carX) < 0.25){
+      if (world.hitCooldown <= 0){
+        world.playerSpeed = Math.max(100, world.playerSpeed - 70);
+        world.flash = 0.3;
+        world.hitCooldown = 0.5;
+      }
     }
-    return true;
-  });
+  }
 
-  if (world.speed < BASE_SPEED) world.speed = Math.min(BASE_SPEED, world.speed + dt * 35);
   if (world.flash > 0) world.flash -= dt;
 
-  world.distance += world.speed * dt * 0.015;
+  // Ziel erreicht?
+  if (world.playerDistance >= TRACK_LENGTH){
+    finishRace();
+  }
+
+  // Scroll-Offset für Straßen-Animation — basiert auf Spieler-Speed
+  world.scroll = (world.scroll + world.playerSpeed * dt * SCROLL_FACTOR) % 1;
 }
 
-function drawObstacles(){
-  // fernste zuerst, damit nahe drüber liegen
-  const sorted = world.obstacles.slice().sort((a, b) => b.z - a.z);
-  for (const o of sorted){
-    if (o.z > 1 || o.z < -0.2) continue;
-    const laneRel = o.lane - world.carX;
-    const p = project(laneRel, Math.max(0.001, o.z));
+function currentRank(){
+  // Wie viele Gegner sind aktuell weiter als der Spieler?
+  let ahead = 0;
+  for (const o of world.opponents){
+    if (o.distance > world.playerDistance) ahead++;
+  }
+  return ahead + 1;
+}
+
+function finishRace(){
+  const place = currentRank();
+  world.phase = 'finished';
+  world.finishResult = { place, time: world.raceTime };
+  finishOverlay.classList.add('show');
+  const suffix = place === 1 ? '1. Platz!' : place === 2 ? '2. Platz' : place === 3 ? '3. Platz' : place + '. Platz';
+  finishPlaceEl.textContent = suffix + (place === 1 ? ' 🏆' : '');
+  finishTimeEl.textContent = 'Zeit: ' + world.raceTime.toFixed(1) + ' s';
+}
+
+// ══════════ Zeichnen: Gegner, Pylonen, Ziellinie ══════════
+function drawRaceObjects(){
+  // Sammle alles mit Z-Wert und zeichne in Reihenfolge "fern → nah".
+  const items = [];
+  for (const o of world.opponents){
+    const z = distanceToZ(o.distance);
+    if (z >= -0.15 && z <= 1.1) items.push({ z, kind:'car', obj:o });
+  }
+  for (const c of world.cones){
+    const z = distanceToZ(c.distance);
+    if (z >= -0.15 && z <= 1.1) items.push({ z, kind:'cone', obj:c });
+  }
+  items.sort((a, b) => b.z - a.z);
+
+  // Rang-Berechnung für Badges über Gegnern
+  const ranking = computeRanking();
+
+  for (const it of items){
+    const laneRel = it.obj.lane - world.carX;
+    const p = project(laneRel, Math.max(0.001, it.z));
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.scale(p.scale, p.scale);
-    if (o.type === 'cone') drawCone();
-    else drawOpponentCar(o.color);
+    if (it.kind === 'cone') drawCone();
+    else {
+      drawOpponentCar(it.obj.color);
+      // Rang-Badge
+      const rank = ranking.get(it.obj);
+      if (rank) drawRankBadge(rank);
+    }
     ctx.restore();
   }
+}
+
+function computeRanking(){
+  // Liste aller Racer (Spieler + Gegner) nach distance absteigend sortieren
+  const racers = [{ who:'player', distance:world.playerDistance }].concat(
+    world.opponents.map(o => ({ who:o, distance:o.distance }))
+  );
+  racers.sort((a, b) => b.distance - a.distance);
+  const map = new Map();
+  racers.forEach((r, i) => { if (r.who !== 'player') map.set(r.who, i + 1); });
+  return map;
+}
+
+function drawRankBadge(rank){
+  const label = rank + (rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th');
+  const badgeW = 42, badgeH = 22;
+  ctx.save();
+  ctx.translate(0, -65);
+  ctx.fillStyle = rank === 1 ? '#fbbf24' : rank === 2 ? '#e5e7eb' : rank === 3 ? '#f97316' : '#64748b';
+  roundRect(-badgeW/2, -badgeH/2, badgeW, badgeH, 6); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.font = 'bold 14px -apple-system,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, 1);
+  ctx.restore();
 }
 
 function drawCone(){
@@ -608,27 +896,30 @@ async function enableTilt(){
   return true;
 }
 
-// Lenkwert pro Frame in world.carX einfließen lassen
+// Lenkwert pro Frame in world.carX einfließen lassen (nur während des Rennens)
 function applySteering(dt){
-  // Feinfühlig: schon 7° reichen für Vollausschlag.
-  // Totzone (±1.2°) verhindert Driften, wenn das Handy gerade gehalten wird.
+  if (world.phase !== 'racing') return; // vor/nach dem Rennen nicht lenken
   const MAX_DEG  = 7;
   const DEAD_DEG = 1.2;
   let r = steer.raw;
   if (Math.abs(r) < DEAD_DEG) r = 0;
   else r = r > 0 ? r - DEAD_DEG : r + DEAD_DEG;
   const t = Math.max(-1, Math.min(1, r / (MAX_DEG - DEAD_DEG)));
-  world.tilt = world.tilt + (t - world.tilt) * Math.min(1, dt * 8); // etwas ruhiger nachführen
-
-  // Lenkung wirkt auf Seitenposition; Geschwindigkeit regelt die Fahrphysik extern.
+  world.tilt = world.tilt + (t - world.tilt) * Math.min(1, dt * 8);
   world.carX += world.tilt * dt * 1.05;
   world.carX = Math.max(-1, Math.min(1, world.carX));
 }
 
-// Haupt-Loop
+// ══════════ Haupt-Loop ══════════
 let lastT = 0, rafId = 0;
-const distEl = document.getElementById('dist');
-const passedEl = document.getElementById('passed');
+const posEl       = document.getElementById('pos');
+const progressEl  = document.getElementById('progress');
+const countdownEl = document.getElementById('countdown');
+const startOverlayEl = document.getElementById('startOverlay');
+const finishOverlay  = document.getElementById('finishOverlay');
+const finishPlaceEl  = document.getElementById('finishPlace');
+const finishTimeEl   = document.getElementById('finishTime');
+
 function loop(ts){
   if(!world.running) return;
   const dt = Math.min(0.05, (ts - lastT) / 1000 || 0);
@@ -636,11 +927,12 @@ function loop(ts){
 
   checkOrientation();
   applySteering(dt);
-  updateObstacles(dt);
+  updateRace(dt);
 
   drawRoad(dt);
-  drawObstacles();
-  drawDashboard();
+  drawFinishLine();
+  drawRaceObjects();
+  drawPlayerCar();
 
   // Roter Flash bei Kollision
   if (world.flash > 0){
@@ -648,31 +940,53 @@ function loop(ts){
     ctx.fillRect(0, 0, W, H);
   }
 
-  speedEl.textContent  = Math.round(world.speed * 0.6) + ' km/h';
-  distEl.textContent   = Math.round(world.distance) + ' m';
-  passedEl.textContent = world.passed + ' ⚡';
+  // HUD updaten
+  const rank = world.phase === 'racing' || world.phase === 'finished' ? currentRank() : '—';
+  const total = world.opponents.length + 1;
+  if (typeof rank === 'number'){
+    const suf = rank === 1 ? 'st' : rank === 2 ? 'nd' : rank === 3 ? 'rd' : 'th';
+    posEl.textContent = rank + suf;
+  } else {
+    posEl.textContent = '—';
+  }
+  speedEl.textContent = Math.round(world.playerSpeed * 0.6) + ' km/h';
+  progressEl.style.width = Math.min(100, (world.playerDistance / TRACK_LENGTH) * 100) + '%';
+
   rafId = requestAnimationFrame(loop);
 }
 
-async function startGame(){
-  // Permission für Sensoren direkt aus der User-Geste heraus anfragen
-  await enableTilt();
+// ══════════ Countdown-Ablauf ══════════
+function runCountdown(){
+  world.phase = 'countdown';
+  startOverlayEl.classList.remove('show');
+  const seq = ['3','2','1','LOS!'];
+  let i = 0;
+  const showNext = () => {
+    if (i >= seq.length){
+      countdownEl.classList.remove('show');
+      world.phase = 'racing';
+      return;
+    }
+    countdownEl.classList.add('show');
+    countdownEl.innerHTML = '<span>' + seq[i] + '</span>';
+    i++;
+    setTimeout(showNext, 900);
+  };
+  showNext();
+}
 
+// ══════════ Spiel starten (aus Menü) ══════════
+async function startGame(){
+  await enableTilt();
   showScene('game');
-  requestAnimationFrame(()=>{ // nach Layout messen
+  requestAnimationFrame(()=>{
     resize();
+    initRace();
+    world.phase = 'start';
     world.running = true;
-    world.scroll = 0;
-    world.carX = 0;
-    world.tilt = 0;
-    world.speed = BASE_SPEED;
-    world.obstacles.length = 0;
-    world.spawnTimer = 1.0;
-    world.distance = 0;
-    world.passed = 0;
-    world.flash = 0;
-    world.hitCooldown = 0;
-    steer.baseline = null;
+    startOverlayEl.classList.add('show');
+    countdownEl.classList.remove('show');
+    finishOverlay.classList.remove('show');
     lastT = performance.now();
     rafId = requestAnimationFrame(loop);
   });
@@ -684,6 +998,17 @@ function stopGame(){
 }
 
 document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('raceStartBtn').addEventListener('click', ()=>{
+  // iOS verlangt User-Geste vor Web Audio → hier auch gleich den Hup-Context wecken
+  try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch{}
+  runCountdown();
+});
+document.getElementById('restartBtn').addEventListener('click', ()=>{
+  finishOverlay.classList.remove('show');
+  initRace();
+  world.phase = 'start';
+  startOverlayEl.classList.add('show');
+});
 
 // ══════════ Auto-Start wenn Handy quer ══════════
 // Wenn der Nutzer das Handy (schon oder nach dem Öffnen) quer hält und im
