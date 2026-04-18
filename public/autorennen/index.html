@@ -238,176 +238,198 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 // Straßen-Zustand
 const BASE_SPEED = 260;
-const LANES = [-0.6, 0, 0.6];    // drei Spuren relativ zur Straßenmitte
+const LANES = [-0.55, 0, 0.55];   // drei Spuren relativ zur Straßenmitte (-1..+1)
+const SCROLL_FACTOR = 0.0035;     // wie schnell z-Werte pro px/s wandern
+const HORIZON_RATIO = 0.38;
 const world = {
   running:false,
-  scroll:0,             // px für Fahrbahn-Animation
-  speed:BASE_SPEED,     // px/s Scrollgeschwindigkeit
-  carX:0,               // -1..1 Position relativ zur Straße
+  scroll:0,             // 0..1 Scrollphase
+  speed:BASE_SPEED,
+  carX:0,               // -1..1 Position der Kamera auf der Fahrbahn
   tilt:0,               // -1..+1 (Lenkwert, geglättet)
-  obstacles:[],         // {lane, y, type:'car'|'cone', color?, passed, hit}
-  spawnTimer:1.0,       // s bis zum nächsten Spawn
-  distance:0,           // "Meter" im HUD
-  passed:0,             // überholte Autos
-  flash:0,              // Rot-Flash bei Treffer (Sekunden)
-  hitCooldown:0         // verhindert mehrere Strafen direkt hintereinander
+  obstacles:[],         // {lane, z, type:'car'|'cone', color?, passed, hit}
+  spawnTimer:1.0,
+  distance:0,
+  passed:0,
+  flash:0,
+  hitCooldown:0
 };
 
 const CAR_COLORS = ['#2563eb','#16a34a','#f59e0b','#8b5cf6','#ec4899','#64748b'];
 
 function checkOrientation(){
-  // Direkt window.innerWidth/Height verwenden — zuverlässiger als
-  // canvas.clientWidth (das kann beim ersten Frame noch 0 sein).
   const portrait = window.innerHeight > window.innerWidth;
   rotateHint.classList.toggle('show', portrait);
   return !portrait;
 }
 
-// Straße + Gras + Fahrbahnmarkierungen zeichnen
+// ══════════ Pseudo-3D-Projektion ══════════
+// z: 1 = am Horizont (weit weg), 0 = direkt am Auto, <0 = hinter dem Fahrer.
+// laneRel: relative Spur zur Kamera (nach Abzug von world.carX).
+function project(laneRel, z){
+  const hy = H * HORIZON_RATIO;
+  const nz = Math.max(0, 1 - z);                 // 0 = fern, 1 = nah
+  const depth = Math.pow(nz, 1.35);              // perspektivische Verzerrung
+  const y = hy + (H - hy + 30) * depth;
+  const roadHalfBase = Math.min(W * 0.48, 420);
+  const roadHalfTop  = 18;
+  const roadHalf = roadHalfTop + (roadHalfBase - roadHalfTop) * depth;
+  const x = W/2 + laneRel * roadHalf;
+  const scale = 0.08 + depth * 0.92;
+  return { x, y, scale, roadHalf };
+}
+
+// Straße, Himmel, Gras — in Segmenten, damit scrollende Streifen Bewegung zeigen
 function drawRoad(dt){
-  // Hintergrund (Himmel oben, Gras seitlich)
+  const hy = H * HORIZON_RATIO;
+
+  // Himmel
+  const sky = ctx.createLinearGradient(0, 0, 0, hy);
+  sky.addColorStop(0, '#6ab0ff');
+  sky.addColorStop(1, '#d8e8ff');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, hy);
+
+  // Boden
   ctx.fillStyle = '#3b5a2a';
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(0, hy, W, H - hy);
 
-  // Straßenfläche (zentriert, ca. 65% der Breite)
-  const roadW = Math.min(W*0.7, 520);
-  const roadX = (W - roadW) / 2;
-  ctx.fillStyle = '#2a2f3d';
-  ctx.fillRect(roadX, 0, roadW, H);
+  // Sonne am Horizont
+  ctx.fillStyle = 'rgba(255,240,200,.6)';
+  ctx.beginPath();
+  ctx.ellipse(W/2, hy - 6, 50, 12, 0, 0, Math.PI*2);
+  ctx.fill();
 
-  // Randlinien (weiß)
-  ctx.strokeStyle = '#f8fafc';
+  world.scroll = (world.scroll + world.speed * dt * SCROLL_FACTOR) % 1;
+
+  const SEG = 18;
+  for (let i = 0; i < SEG; i++){
+    const zNear = 1 - ((i     + world.scroll) / SEG);
+    const zFar  = 1 - ((i + 1 + world.scroll) / SEG);
+    if (zNear <= 0 && zFar <= 0) continue;
+
+    const pn = project(0, Math.max(0, zNear));
+    const pf = project(0, Math.max(0, zFar));
+    const yN = pn.y, yF = pf.y;
+    const hN = pn.roadHalf, hF = pf.roadHalf;
+    // leichte Parallaxe beim Lenken
+    const camShift = -world.carX * 0.15;
+    const xN = W/2 + camShift * hN;
+    const xF = W/2 + camShift * hF;
+
+    // Gras links/rechts (abwechselnde Grüntöne für Bewegungs-Illusion)
+    ctx.fillStyle = (i & 1) ? '#2f5c1f' : '#264d18';
+    ctx.beginPath();
+    ctx.moveTo(0, yN); ctx.lineTo(xN - hN, yN);
+    ctx.lineTo(xF - hF, yF); ctx.lineTo(0, yF);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(W, yN); ctx.lineTo(xN + hN, yN);
+    ctx.lineTo(xF + hF, yF); ctx.lineTo(W, yF);
+    ctx.closePath(); ctx.fill();
+
+    // Straßenscheibe
+    ctx.fillStyle = (i & 1) ? '#323847' : '#2a2f3d';
+    ctx.beginPath();
+    ctx.moveTo(xN - hN, yN); ctx.lineTo(xN + hN, yN);
+    ctx.lineTo(xF + hF, yF); ctx.lineTo(xF - hF, yF);
+    ctx.closePath(); ctx.fill();
+
+    // Weiße Ränder
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = Math.max(1.2, 2.2 * pn.scale);
+    ctx.beginPath();
+    ctx.moveTo(xN - hN, yN); ctx.lineTo(xF - hF, yF);
+    ctx.moveTo(xN + hN, yN); ctx.lineTo(xF + hF, yF);
+    ctx.stroke();
+
+    // Gelbe Mittelstreifen (nur jede zweite Scheibe = gestrichelte Linie)
+    if (i & 1){
+      ctx.fillStyle = '#fde047';
+      const dN = Math.max(1, 3 * pn.scale);
+      const dF = Math.max(1, 3 * pf.scale);
+      ctx.beginPath();
+      ctx.moveTo(xN - dN, yN); ctx.lineTo(xN + dN, yN);
+      ctx.lineTo(xF + dF, yF); ctx.lineTo(xF - dF, yF);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+}
+
+// ══════════ Cockpit / Armaturenbrett ══════════
+// Der Spieler sitzt hinter dem Lenkrad: unten ein gewölbtes Haubenstück in
+// der Wunschfarbe, darüber eine dunkle Dashboard-Leiste und ein
+// angedeutetes Lenkrad, das sich mit dem Lenkwert dreht.
+function drawDashboard(){
+  const dashH   = Math.min(H * 0.32, 200);
+  const dashTop = H - dashH;
+
+  // Haube in Wagenfarbe
+  const grad = ctx.createLinearGradient(0, dashTop, 0, H);
+  grad.addColorStop(0,   state.color);
+  grad.addColorStop(.55, state.color);
+  grad.addColorStop(1,   shade(state.color, -0.3));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(-30, H);
+  ctx.lineTo(-30, dashTop + dashH * 0.45);
+  ctx.quadraticCurveTo(W/2, dashTop - 14, W + 30, dashTop + dashH * 0.45);
+  ctx.lineTo(W + 30, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glanzstreifen
+  ctx.fillStyle = 'rgba(255,255,255,.15)';
+  ctx.beginPath();
+  ctx.moveTo(0, dashTop + dashH * 0.58);
+  ctx.quadraticCurveTo(W/2, dashTop + dashH * 0.3, W, dashTop + dashH * 0.58);
+  ctx.quadraticCurveTo(W/2, dashTop + dashH * 0.4, 0, dashTop + dashH * 0.58);
+  ctx.closePath(); ctx.fill();
+
+  // Dashboard-Kante (dunkel) — A-Säulen-Andeutung
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(-30, dashTop - 10, W + 60, 14);
+
+  // Lenkrad mittig unten — dreht sich mit dem Neigungswinkel
+  const wheelY = H - dashH * 0.22;
+  const wheelR = Math.min(H * 0.16, 90);
+  ctx.save();
+  ctx.translate(W/2, wheelY + wheelR * 0.25);
+  ctx.rotate(world.tilt * 0.6);
+  // Ring außen
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.arc(0, 0, wheelR, Math.PI * 0.12, Math.PI * 0.88, false);
+  ctx.stroke();
+  ctx.strokeStyle = '#0f172a';
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(roadX+3, 0); ctx.lineTo(roadX+3, H);
-  ctx.moveTo(roadX+roadW-3, 0); ctx.lineTo(roadX+roadW-3, H);
+  ctx.arc(0, 0, wheelR, Math.PI * 0.12, Math.PI * 0.88, false);
   ctx.stroke();
-
-  // Gestrichelte Mittellinie — scrollt mit world.scroll
-  world.scroll = (world.scroll + world.speed * dt) % 80;
-  ctx.strokeStyle = '#fde047';
-  ctx.lineWidth = 6;
-  ctx.setLineDash([40, 40]);
-  ctx.lineDashOffset = -world.scroll;
+  // Speichen
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 9;
   ctx.beginPath();
-  ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H);
+  ctx.moveTo(-wheelR * 0.9, 0);
+  ctx.lineTo( wheelR * 0.9, 0);
   ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Seitenstreifen-Gras-Deko (einfache Striche, scrollen auch)
-  ctx.fillStyle = '#264d18';
-  const stripeH = 40;
-  const off = world.scroll % stripeH;
-  for(let y = -stripeH + off; y < H; y += stripeH){
-    ctx.fillRect(0, y, roadX-6, 6);
-    ctx.fillRect(roadX+roadW+6, y, W-(roadX+roadW+6), 6);
-  }
-}
-
-// Auto zeichnen — Karosserie in state.color, Reifen je nach state.tire
-function drawCar(){
-  const roadW = Math.min(W*0.7, 520);
-  const roadX = (W - roadW) / 2;
-  const cx = roadX + roadW/2 + world.carX * (roadW/2 - 44);
-  const cy = H - 100;
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  // leichte Lenkneigung visuell andeuten
-  ctx.rotate(world.tilt * 0.12);
-
-  const bodyW = 56, bodyH = 96;
-
-  // Schatten unter dem Auto
-  ctx.fillStyle = 'rgba(0,0,0,.35)';
-  ctx.beginPath();
-  ctx.ellipse(0, bodyH/2 + 6, bodyW*0.55, 8, 0, 0, Math.PI*2);
-  ctx.fill();
-
-  // Reifen zuerst (damit Karosserie drüberliegt)
-  drawTire(-bodyW/2 - 2, -bodyH/2 + 14);   // vorne links
-  drawTire( bodyW/2 + 2, -bodyH/2 + 14);   // vorne rechts
-  drawTire(-bodyW/2 - 2,  bodyH/2 - 14);   // hinten links
-  drawTire( bodyW/2 + 2,  bodyH/2 - 14);   // hinten rechts
-
-  // Karosserie
-  ctx.fillStyle = state.color;
-  roundRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 12);
-  ctx.fill();
-
-  // Farb-Highlight links (Glanz)
-  ctx.fillStyle = 'rgba(255,255,255,.18)';
-  roundRect(-bodyW/2 + 4, -bodyH/2 + 6, 8, bodyH - 12, 4);
-  ctx.fill();
-
-  // Frontscheibe (oben)
-  ctx.fillStyle = 'rgba(180,220,255,.85)';
-  roundRect(-bodyW/2 + 8, -bodyH/2 + 10, bodyW - 16, 22, 4);
-  ctx.fill();
-
-  // Heckscheibe (unten)
-  ctx.fillStyle = 'rgba(180,220,255,.7)';
-  roundRect(-bodyW/2 + 8, bodyH/2 - 30, bodyW - 16, 18, 4);
-  ctx.fill();
-
-  // Mittel-Karosserie (Dachlinie)
-  ctx.strokeStyle = 'rgba(0,0,0,.15)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(-bodyW/2 + 4, 0);
-  ctx.lineTo( bodyW/2 - 4, 0);
-  ctx.stroke();
-
-  // Scheinwerfer vorne
-  ctx.fillStyle = '#fef9c3';
-  roundRect(-bodyW/2 + 6, -bodyH/2 + 2, 10, 5, 2); ctx.fill();
-  roundRect( bodyW/2 - 16, -bodyH/2 + 2, 10, 5, 2); ctx.fill();
-
-  // Rücklichter
-  ctx.fillStyle = '#b91c1c';
-  roundRect(-bodyW/2 + 6, bodyH/2 - 7, 10, 5, 2); ctx.fill();
-  roundRect( bodyW/2 - 16, bodyH/2 - 7, 10, 5, 2); ctx.fill();
-
-  ctx.restore();
-}
-
-function drawTire(x, y){
-  ctx.save();
-  ctx.translate(x, y);
-  // Mantel
-  ctx.fillStyle = '#0f172a';
-  roundRect(-7, -10, 14, 20, 4);
-  ctx.fill();
-
-  // Reifenprofil je nach Variante
-  if(state.tire === 'normal'){
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 1;
-    for(let i=-7;i<=7;i+=3){
-      ctx.beginPath(); ctx.moveTo(-6,i); ctx.lineTo(6,i); ctx.stroke();
-    }
-  } else if(state.tire === 'sport'){
-    ctx.fillStyle = '#facc15';
-    ctx.fillRect(-5, -1.5, 10, 3);
-    ctx.fillRect(-1.5, -8, 3, 16);
-  } else if(state.tire === 'offroad'){
-    ctx.fillStyle = '#65a30d';
-    for(let iy=-7; iy<=7; iy+=4){
-      ctx.beginPath(); ctx.arc(-3, iy, 1.8, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc( 3, iy, 1.8, 0, Math.PI*2); ctx.fill();
-    }
-  } else if(state.tire === 'stern'){
-    ctx.fillStyle = '#f472b6';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('★', 0, 0);
-  }
-
   // Nabe
-  ctx.fillStyle = '#94a3b8';
-  ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#374151';
+  ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = state.color;
+  ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
   ctx.restore();
+}
+
+// Kleine Hilfsfunktion für Farb-Verläufe
+function shade(hex, amt){
+  const h = hex.replace('#','');
+  const n = parseInt(h.length === 3 ? h.split('').map(c=>c+c).join('') : h, 16);
+  let r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+  r = Math.max(0, Math.min(255, Math.round(r + 255*amt)));
+  g = Math.max(0, Math.min(255, Math.round(g + 255*amt)));
+  b = Math.max(0, Math.min(255, Math.round(b + 255*amt)));
+  return 'rgb('+r+','+g+','+b+')';
 }
 
 function roundRect(x,y,w,h,r){
@@ -420,17 +442,17 @@ function roundRect(x,y,w,h,r){
   ctx.closePath();
 }
 
-// ══════════ Hindernisse & Gegner-Autos ══════════
+// ══════════ Hindernisse & Gegner-Autos (z-basiert) ══════════
 function spawnObstacle(){
   const lane = LANES[Math.floor(Math.random() * LANES.length)];
-  // Nicht spawnen, wenn in derselben Spur noch etwas zu nah dran ist
+  // Mindestabstand in der gleichen Spur
   for (const o of world.obstacles){
-    if (o.lane === lane && o.y < 220) return;
+    if (o.lane === lane && o.z > 0.8) return;
   }
   const isCone = Math.random() < 0.35;
   world.obstacles.push({
     lane,
-    y: -100,
+    z: 1,
     type: isCone ? 'cone' : 'car',
     color: isCone ? null : CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
     passed: false,
@@ -442,56 +464,50 @@ function updateObstacles(dt){
   world.spawnTimer -= dt;
   if (world.spawnTimer <= 0){
     spawnObstacle();
-    world.spawnTimer = 0.9 + Math.random() * 0.9;
+    world.spawnTimer = 0.8 + Math.random() * 0.7;
   }
-  for (const o of world.obstacles) o.y += world.speed * dt;
+  // z von 1 → 0 → negativ (hinter Kamera)
+  for (const o of world.obstacles) o.z -= world.speed * dt * SCROLL_FACTOR;
 
   if (world.hitCooldown > 0) world.hitCooldown -= dt;
 
-  // Kollision mit Spieler prüfen
-  const roadW = Math.min(W*0.7, 520);
-  const playerCy = H - 100;
-  const playerCx = world.carX * (roadW/2 - 44);
   for (const o of world.obstacles){
     if (o.hit) continue;
-    const dy = playerCy - o.y;
-    if (dy > -40 && dy < 70){
-      const oCx = o.lane * (roadW/2 - 44);
-      if (Math.abs(oCx - playerCx) < 42){
-        o.hit = true;
-        if (world.hitCooldown <= 0){
-          world.speed = Math.max(130, world.speed - 70);
-          world.flash = 0.35;
-          world.hitCooldown = 0.4;
-        }
+    if (o.z > 0.15 || o.z < -0.2) continue;
+    if (Math.abs(o.lane - world.carX) < 0.28){
+      o.hit = true;
+      if (world.hitCooldown <= 0){
+        world.speed = Math.max(130, world.speed - 70);
+        world.flash = 0.35;
+        world.hitCooldown = 0.4;
       }
     }
   }
 
-  // Passierte Hindernisse zählen und entfernen
   world.obstacles = world.obstacles.filter(o => {
-    if (o.y > H + 100){
-      if (!o.passed && !o.hit) { o.passed = true; world.passed++; }
+    if (o.z < -0.15){
+      if (!o.passed && !o.hit){ o.passed = true; world.passed++; }
       return false;
     }
     return true;
   });
 
-  // Tempo erholt sich nach Stoß wieder
   if (world.speed < BASE_SPEED) world.speed = Math.min(BASE_SPEED, world.speed + dt * 35);
   if (world.flash > 0) world.flash -= dt;
 
-  // „Meter" für HUD — frei skaliert, damit die Zahl ein bisschen was hermacht
   world.distance += world.speed * dt * 0.015;
 }
 
 function drawObstacles(){
-  const roadW = Math.min(W*0.7, 520);
-  const roadX = (W - roadW) / 2;
-  for (const o of world.obstacles){
-    const cx = roadX + roadW/2 + o.lane * (roadW/2 - 44);
+  // fernste zuerst, damit nahe drüber liegen
+  const sorted = world.obstacles.slice().sort((a, b) => b.z - a.z);
+  for (const o of sorted){
+    if (o.z > 1 || o.z < -0.2) continue;
+    const laneRel = o.lane - world.carX;
+    const p = project(laneRel, Math.max(0.001, o.z));
     ctx.save();
-    ctx.translate(cx, o.y);
+    ctx.translate(p.x, p.y);
+    ctx.scale(p.scale, p.scale);
     if (o.type === 'cone') drawCone();
     else drawOpponentCar(o.color);
     ctx.restore();
@@ -500,42 +516,47 @@ function drawObstacles(){
 
 function drawCone(){
   ctx.fillStyle = 'rgba(0,0,0,.35)';
-  ctx.beginPath(); ctx.ellipse(0, 16, 14, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 12, 20, 5, 0, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#f97316';
   ctx.beginPath();
-  ctx.moveTo(-14, 20); ctx.lineTo(14, 20);
-  ctx.lineTo(4, -22); ctx.lineTo(-4, -22);
+  ctx.moveTo(-18, 14); ctx.lineTo(18, 14);
+  ctx.lineTo(5, -28); ctx.lineTo(-5, -28);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.beginPath();
-  ctx.moveTo(-10, 6); ctx.lineTo(10, 6);
-  ctx.lineTo(7, -2); ctx.lineTo(-7, -2);
+  ctx.moveTo(-13, -2); ctx.lineTo(13, -2);
+  ctx.lineTo(10, -10); ctx.lineTo(-10, -10);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(-16, 18, 32, 4);
+  ctx.fillRect(-20, 10, 40, 5);
 }
 
 function drawOpponentCar(color){
-  const bodyW = 52, bodyH = 86;
-  ctx.fillStyle = 'rgba(0,0,0,.35)';
-  ctx.beginPath(); ctx.ellipse(0, bodyH/2 + 5, bodyW*0.55, 7, 0, 0, Math.PI*2); ctx.fill();
+  // Ansicht von hinten (wir überholen)
+  const bodyW = 78, bodyH = 92;
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.beginPath(); ctx.ellipse(0, bodyH/2 + 8, bodyW*0.55, 9, 0, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#0f172a';
-  roundRect(-bodyW/2 - 8, -bodyH/2 + 8,  12, 18, 3); ctx.fill();
-  roundRect( bodyW/2 - 4, -bodyH/2 + 8,  12, 18, 3); ctx.fill();
-  roundRect(-bodyW/2 - 8,  bodyH/2 - 26, 12, 18, 3); ctx.fill();
-  roundRect( bodyW/2 - 4,  bodyH/2 - 26, 12, 18, 3); ctx.fill();
+  roundRect(-bodyW/2 - 6, -bodyH/2 + 12, 12, 20, 3); ctx.fill();
+  roundRect( bodyW/2 - 6, -bodyH/2 + 12, 12, 20, 3); ctx.fill();
+  roundRect(-bodyW/2 - 6,  bodyH/2 - 32, 12, 20, 3); ctx.fill();
+  roundRect( bodyW/2 - 6,  bodyH/2 - 32, 12, 20, 3); ctx.fill();
   ctx.fillStyle = color;
-  roundRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 10); ctx.fill();
-  ctx.fillStyle = 'rgba(180,220,255,.85)';
-  roundRect(-bodyW/2 + 7, -bodyH/2 + 8, bodyW - 14, 20, 4); ctx.fill();
-  ctx.fillStyle = 'rgba(180,220,255,.7)';
-  roundRect(-bodyW/2 + 7, bodyH/2 - 26, bodyW - 14, 16, 4); ctx.fill();
-  ctx.fillStyle = '#fef9c3';
-  roundRect(-bodyW/2 + 5, -bodyH/2 + 2, 10, 4, 2); ctx.fill();
-  roundRect( bodyW/2 - 15, -bodyH/2 + 2, 10, 4, 2); ctx.fill();
-  ctx.fillStyle = '#b91c1c';
-  roundRect(-bodyW/2 + 5, bodyH/2 - 6, 10, 4, 2); ctx.fill();
-  roundRect( bodyW/2 - 15, bodyH/2 - 6, 10, 4, 2); ctx.fill();
+  roundRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 14); ctx.fill();
+  // Heckscheibe (oben)
+  ctx.fillStyle = 'rgba(180,220,255,.75)';
+  roundRect(-bodyW/2 + 10, -bodyH/2 + 10, bodyW - 20, 24, 6); ctx.fill();
+  // Kofferraum-Linie
+  ctx.strokeStyle = 'rgba(0,0,0,.25)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-bodyW/2 + 8, 6); ctx.lineTo(bodyW/2 - 8, 6); ctx.stroke();
+  // Rücklichter
+  ctx.fillStyle = '#ef4444';
+  roundRect(-bodyW/2 + 8, bodyH/2 - 16, 18, 8, 3); ctx.fill();
+  roundRect( bodyW/2 - 26, bodyH/2 - 16, 18, 8, 3); ctx.fill();
+  // Kennzeichen
+  ctx.fillStyle = '#e5e7eb';
+  roundRect(-18, bodyH/2 - 18, 36, 10, 2); ctx.fill();
 }
 
 // ══════════ Lenkung über DeviceOrientation ══════════
@@ -553,14 +574,14 @@ function orientationAngle(){
 }
 
 // Nimmt das passende Achsen-Grad (gamma oder beta) je nach Landscape-Seite.
+// Konvention: positives Ergebnis = Auto soll NACH RECHTS lenken.
+// → „rechte Bildschirmseite nach unten kippen" muss positiv werden.
 function tiltFromEvent(e){
   const a = orientationAngle();
-  // Portrait-Fallback: gamma (links-rechts-Neigung)
-  if(a === 0)    return e.gamma || 0;
+  if(a === 0)    return e.gamma || 0;           // Portrait: gamma links/rechts
   if(a === 180)  return -(e.gamma || 0);
-  // Landscape: die Rotation ums "Lenkrad" liegt auf beta — Vorzeichen je nach Seite
-  if(a === 90)   return -(e.beta || 0);   // Home-Taste rechts
-  if(a === 270 || a === -90) return (e.beta || 0);
+  if(a === 90)   return  (e.beta  || 0);        // Landscape, Home rechts
+  if(a === 270 || a === -90) return -(e.beta || 0); // Landscape, Home links
   return e.gamma || 0;
 }
 
@@ -619,7 +640,7 @@ function loop(ts){
 
   drawRoad(dt);
   drawObstacles();
-  drawCar();
+  drawDashboard();
 
   // Roter Flash bei Kollision
   if (world.flash > 0){
