@@ -1,6 +1,6 @@
 // Service Worker für Ballongarten — Offline-Shell + Asset-Cache
 // Version hochzählen, wenn Dateien sich ändern, damit alte SW-Instanzen sauber abgelöst werden.
-const CACHE = 'ballongarten-v6';
+const CACHE = 'ballongarten-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -30,6 +30,9 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.pathname.startsWith('/ws')) return; // WS nicht anfassen
+  // Andere PWAs (z.B. /autorennen/) gehören NICHT zu Ballongarten,
+  // obwohl der SW-Scope / auch deren Pfade umfassen würde. Nicht anfassen.
+  if (url.pathname.startsWith('/autorennen/')) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
       const network = fetch(e.request).then(res => {
