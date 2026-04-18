@@ -57,6 +57,8 @@ p{margin:4px 0;text-align:center}
 .hud{position:absolute;top:10px;left:12px;right:12px;display:flex;justify-content:space-between;
   align-items:center;font-weight:700;pointer-events:none;
   text-shadow:0 2px 6px rgba(0,0,0,.6)}
+.hud .stats{display:flex;gap:6px;pointer-events:auto}
+.hud .stat{background:rgba(0,0,0,.35);padding:6px 10px;border-radius:10px;font-size:13px;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .hud .speed{background:rgba(0,0,0,.35);padding:6px 12px;border-radius:10px;font-size:14px;
   pointer-events:auto}
 .hud .back{background:rgba(0,0,0,.45);color:#fff;border:none;border-radius:10px;padding:6px 12px;
@@ -108,7 +110,11 @@ p{margin:4px 0;text-align:center}
   <canvas id="road"></canvas>
   <div class="hud">
     <button id="backBtn" class="back">‹ Menü</button>
-    <div class="speed" id="speed">0 km/h</div>
+    <div class="stats">
+      <div class="stat" id="dist">0 m</div>
+      <div class="stat" id="passed">0 ⚡</div>
+      <div class="stat" id="speed">0 km/h</div>
+    </div>
   </div>
   <button id="honkBtn" class="honk" aria-label="Hupe">HUP</button>
   <div id="rotateHint" class="rotate-hint">
@@ -231,13 +237,23 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
 // Straßen-Zustand
+const BASE_SPEED = 260;
+const LANES = [-0.6, 0, 0.6];    // drei Spuren relativ zur Straßenmitte
 const world = {
   running:false,
-  scroll:0,          // px für Fahrbahn-Animation
-  speed:240,         // px/s Scrollgeschwindigkeit
-  carX:0,            // 0..1 Position relativ zur Straße
-  tilt:0             // -1..+1 (Lenkwert)
+  scroll:0,             // px für Fahrbahn-Animation
+  speed:BASE_SPEED,     // px/s Scrollgeschwindigkeit
+  carX:0,               // -1..1 Position relativ zur Straße
+  tilt:0,               // -1..+1 (Lenkwert, geglättet)
+  obstacles:[],         // {lane, y, type:'car'|'cone', color?, passed, hit}
+  spawnTimer:1.0,       // s bis zum nächsten Spawn
+  distance:0,           // "Meter" im HUD
+  passed:0,             // überholte Autos
+  flash:0,              // Rot-Flash bei Treffer (Sekunden)
+  hitCooldown:0         // verhindert mehrere Strafen direkt hintereinander
 };
+
+const CAR_COLORS = ['#2563eb','#16a34a','#f59e0b','#8b5cf6','#ec4899','#64748b'];
 
 function checkOrientation(){
   // Direkt window.innerWidth/Height verwenden — zuverlässiger als
@@ -404,6 +420,124 @@ function roundRect(x,y,w,h,r){
   ctx.closePath();
 }
 
+// ══════════ Hindernisse & Gegner-Autos ══════════
+function spawnObstacle(){
+  const lane = LANES[Math.floor(Math.random() * LANES.length)];
+  // Nicht spawnen, wenn in derselben Spur noch etwas zu nah dran ist
+  for (const o of world.obstacles){
+    if (o.lane === lane && o.y < 220) return;
+  }
+  const isCone = Math.random() < 0.35;
+  world.obstacles.push({
+    lane,
+    y: -100,
+    type: isCone ? 'cone' : 'car',
+    color: isCone ? null : CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
+    passed: false,
+    hit: false
+  });
+}
+
+function updateObstacles(dt){
+  world.spawnTimer -= dt;
+  if (world.spawnTimer <= 0){
+    spawnObstacle();
+    world.spawnTimer = 0.9 + Math.random() * 0.9;
+  }
+  for (const o of world.obstacles) o.y += world.speed * dt;
+
+  if (world.hitCooldown > 0) world.hitCooldown -= dt;
+
+  // Kollision mit Spieler prüfen
+  const roadW = Math.min(W*0.7, 520);
+  const playerCy = H - 100;
+  const playerCx = world.carX * (roadW/2 - 44);
+  for (const o of world.obstacles){
+    if (o.hit) continue;
+    const dy = playerCy - o.y;
+    if (dy > -40 && dy < 70){
+      const oCx = o.lane * (roadW/2 - 44);
+      if (Math.abs(oCx - playerCx) < 42){
+        o.hit = true;
+        if (world.hitCooldown <= 0){
+          world.speed = Math.max(130, world.speed - 70);
+          world.flash = 0.35;
+          world.hitCooldown = 0.4;
+        }
+      }
+    }
+  }
+
+  // Passierte Hindernisse zählen und entfernen
+  world.obstacles = world.obstacles.filter(o => {
+    if (o.y > H + 100){
+      if (!o.passed && !o.hit) { o.passed = true; world.passed++; }
+      return false;
+    }
+    return true;
+  });
+
+  // Tempo erholt sich nach Stoß wieder
+  if (world.speed < BASE_SPEED) world.speed = Math.min(BASE_SPEED, world.speed + dt * 35);
+  if (world.flash > 0) world.flash -= dt;
+
+  // „Meter" für HUD — frei skaliert, damit die Zahl ein bisschen was hermacht
+  world.distance += world.speed * dt * 0.015;
+}
+
+function drawObstacles(){
+  const roadW = Math.min(W*0.7, 520);
+  const roadX = (W - roadW) / 2;
+  for (const o of world.obstacles){
+    const cx = roadX + roadW/2 + o.lane * (roadW/2 - 44);
+    ctx.save();
+    ctx.translate(cx, o.y);
+    if (o.type === 'cone') drawCone();
+    else drawOpponentCar(o.color);
+    ctx.restore();
+  }
+}
+
+function drawCone(){
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.ellipse(0, 16, 14, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath();
+  ctx.moveTo(-14, 20); ctx.lineTo(14, 20);
+  ctx.lineTo(4, -22); ctx.lineTo(-4, -22);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(-10, 6); ctx.lineTo(10, 6);
+  ctx.lineTo(7, -2); ctx.lineTo(-7, -2);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(-16, 18, 32, 4);
+}
+
+function drawOpponentCar(color){
+  const bodyW = 52, bodyH = 86;
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.ellipse(0, bodyH/2 + 5, bodyW*0.55, 7, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0f172a';
+  roundRect(-bodyW/2 - 8, -bodyH/2 + 8,  12, 18, 3); ctx.fill();
+  roundRect( bodyW/2 - 4, -bodyH/2 + 8,  12, 18, 3); ctx.fill();
+  roundRect(-bodyW/2 - 8,  bodyH/2 - 26, 12, 18, 3); ctx.fill();
+  roundRect( bodyW/2 - 4,  bodyH/2 - 26, 12, 18, 3); ctx.fill();
+  ctx.fillStyle = color;
+  roundRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 10); ctx.fill();
+  ctx.fillStyle = 'rgba(180,220,255,.85)';
+  roundRect(-bodyW/2 + 7, -bodyH/2 + 8, bodyW - 14, 20, 4); ctx.fill();
+  ctx.fillStyle = 'rgba(180,220,255,.7)';
+  roundRect(-bodyW/2 + 7, bodyH/2 - 26, bodyW - 14, 16, 4); ctx.fill();
+  ctx.fillStyle = '#fef9c3';
+  roundRect(-bodyW/2 + 5, -bodyH/2 + 2, 10, 4, 2); ctx.fill();
+  roundRect( bodyW/2 - 15, -bodyH/2 + 2, 10, 4, 2); ctx.fill();
+  ctx.fillStyle = '#b91c1c';
+  roundRect(-bodyW/2 + 5, bodyH/2 - 6, 10, 4, 2); ctx.fill();
+  roundRect( bodyW/2 - 15, bodyH/2 - 6, 10, 4, 2); ctx.fill();
+}
+
 // ══════════ Lenkung über DeviceOrientation ══════════
 // Lenk-Achse hängt von der Bildschirm-Orientierung ab.
 // Wir kalibrieren beim Spielstart auf 0, dann zählt nur die Differenz.
@@ -455,19 +589,25 @@ async function enableTilt(){
 
 // Lenkwert pro Frame in world.carX einfließen lassen
 function applySteering(dt){
-  // ~20° Vollausschlag → tilt = ±1
-  const MAX_DEG = 20;
-  const t = Math.max(-1, Math.min(1, steer.raw / MAX_DEG));
-  world.tilt = world.tilt + (t - world.tilt) * Math.min(1, dt * 10); // sanftes Nachführen
+  // Feinfühlig: schon 7° reichen für Vollausschlag.
+  // Totzone (±1.2°) verhindert Driften, wenn das Handy gerade gehalten wird.
+  const MAX_DEG  = 7;
+  const DEAD_DEG = 1.2;
+  let r = steer.raw;
+  if (Math.abs(r) < DEAD_DEG) r = 0;
+  else r = r > 0 ? r - DEAD_DEG : r + DEAD_DEG;
+  const t = Math.max(-1, Math.min(1, r / (MAX_DEG - DEAD_DEG)));
+  world.tilt = world.tilt + (t - world.tilt) * Math.min(1, dt * 8); // etwas ruhiger nachführen
 
-  // Lenkung wirkt auf Seitenposition; Geschwindigkeit ist fix.
-  world.carX += world.tilt * dt * 1.6;
-  // An Fahrbahnränder clampen
+  // Lenkung wirkt auf Seitenposition; Geschwindigkeit regelt die Fahrphysik extern.
+  world.carX += world.tilt * dt * 1.05;
   world.carX = Math.max(-1, Math.min(1, world.carX));
 }
 
 // Haupt-Loop
 let lastT = 0, rafId = 0;
+const distEl = document.getElementById('dist');
+const passedEl = document.getElementById('passed');
 function loop(ts){
   if(!world.running) return;
   const dt = Math.min(0.05, (ts - lastT) / 1000 || 0);
@@ -475,10 +615,21 @@ function loop(ts){
 
   checkOrientation();
   applySteering(dt);
+  updateObstacles(dt);
+
   drawRoad(dt);
+  drawObstacles();
   drawCar();
 
-  speedEl.textContent = Math.round(world.speed * 0.6) + ' km/h';
+  // Roter Flash bei Kollision
+  if (world.flash > 0){
+    ctx.fillStyle = 'rgba(239, 68, 68, ' + Math.min(.4, world.flash * 1.2) + ')';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  speedEl.textContent  = Math.round(world.speed * 0.6) + ' km/h';
+  distEl.textContent   = Math.round(world.distance) + ' m';
+  passedEl.textContent = world.passed + ' ⚡';
   rafId = requestAnimationFrame(loop);
 }
 
@@ -493,6 +644,13 @@ async function startGame(){
     world.scroll = 0;
     world.carX = 0;
     world.tilt = 0;
+    world.speed = BASE_SPEED;
+    world.obstacles.length = 0;
+    world.spawnTimer = 1.0;
+    world.distance = 0;
+    world.passed = 0;
+    world.flash = 0;
+    world.hitCooldown = 0;
     steer.baseline = null;
     lastT = performance.now();
     rafId = requestAnimationFrame(loop);
