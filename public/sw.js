@@ -1,6 +1,6 @@
 // Service Worker für Ballongarten — Offline-Shell + Asset-Cache
 // Version hochzählen, wenn Dateien sich ändern, damit alte SW-Instanzen sauber abgelöst werden.
-const CACHE = 'ballongarten-v5';
+const CACHE = 'ballongarten-v6';
 const ASSETS = [
   './',
   './index.html',
