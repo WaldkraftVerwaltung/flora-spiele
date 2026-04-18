@@ -1,0 +1,16 @@
+[
+  {
+    "slug": "ballongarten",
+    "name": "Ballongarten",
+    "subtitle": "Ballon-Schlachtschiff für zwei",
+    "color": "#7ec14a",
+    "emoji": "🎈"
+  },
+  {
+    "slug": "autorennen",
+    "name": "Autorennen",
+    "subtitle": "Handy quer halten, lenken, hupen",
+    "color": "#ffca60",
+    "emoji": "🏎️"
+  }
+]

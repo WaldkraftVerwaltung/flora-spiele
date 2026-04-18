@@ -1,10 +1,10 @@
 {
-  "id": "/",
+  "id": "/ballongarten/",
   "name": "Ballongarten",
   "short_name": "Ballongarten",
   "description": "Zwei-Spieler Ballon-Schlacht im Geburtstagsgarten",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/ballongarten/",
+  "scope": "/ballongarten/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#7ec14a",
