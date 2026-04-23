@@ -1141,9 +1141,25 @@ window.addEventListener('blur', () => gasRelease());
 document.addEventListener('visibilitychange', () => { if (document.hidden) gasRelease(); });
 
 // ══════════ Service Worker (PWA) ══════════
+// Der SW dient nur als Offline-Shell + Asset-Cache. HTML kommt dank network-
+// first-Strategie immer frisch vom Server. Wenn ein neuer SW übernimmt (nach
+// einem Deploy), laden wir den Tab einmalig automatisch neu — so sieht der
+// Nutzer sofort die neue Version, ohne die PWA zweimal öffnen zu müssen.
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(()=>{});
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).then(reg => {
+      // Beim Rückkehr in den Vordergrund nach Update-SW suchen lassen
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) reg.update().catch(()=>{});
+      });
+    }).catch(()=>{});
+
+    let refreshed = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshed) return;
+      refreshed = true;
+      window.location.reload();
+    });
   });
 }
 
