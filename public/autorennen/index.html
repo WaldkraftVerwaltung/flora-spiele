@@ -126,14 +126,26 @@ p{margin:4px 0;text-align:center}
 .finish-card h2{font-size:30px;margin:0 0 4px;letter-spacing:.5px}
 .finish-card .btn{width:auto;padding:12px 22px}
 
-/* Hup-Knopf rechts unten */
-.honk{position:absolute;right:18px;bottom:18px;width:74px;height:74px;border-radius:50%;
+/* Hup-Knopf unten links (klein) */
+.honk{position:absolute;left:18px;bottom:18px;width:62px;height:62px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#ff6b6b 0%,#e11d48 55%,#9f1239 100%);
-  border:3px solid #fecaca;box-shadow:0 6px 0 #7f1d1d,0 10px 20px rgba(0,0,0,.35);
-  color:#fff;font-weight:900;font-size:15px;letter-spacing:.5px;
+  border:3px solid #fecaca;box-shadow:0 5px 0 #7f1d1d,0 8px 16px rgba(0,0,0,.35);
+  color:#fff;font-weight:900;font-size:13px;letter-spacing:.5px;
   display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer;
-  user-select:none;-webkit-user-select:none;touch-action:manipulation}
-.honk:active{transform:translateY(3px);box-shadow:0 3px 0 #7f1d1d,0 6px 12px rgba(0,0,0,.35)}
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;z-index:7}
+.honk:active{transform:translateY(3px);box-shadow:0 2px 0 #7f1d1d,0 5px 10px rgba(0,0,0,.35)}
+
+/* Gaspedal unten rechts (groß, duldet Halten) */
+.gas{position:absolute;right:18px;bottom:18px;width:clamp(90px,16vmin,130px);
+  height:clamp(90px,16vmin,130px);border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#86efac 0%,#22c55e 55%,#15803d 100%);
+  border:4px solid rgba(255,255,255,.85);
+  box-shadow:0 8px 0 #14532d,0 14px 24px rgba(0,0,0,.4);
+  color:#fff;font-weight:900;font-size:clamp(18px,3vmin,26px);letter-spacing:2px;
+  display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer;
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;z-index:7}
+.gas.pressed{transform:translateY(5px);box-shadow:0 3px 0 #14532d,0 8px 14px rgba(0,0,0,.4);
+  background:radial-gradient(circle at 35% 30%,#bbf7d0 0%,#4ade80 55%,#166534 100%)}
 </style>
 </head>
 <body>
@@ -178,6 +190,7 @@ p{margin:4px 0;text-align:center}
   </div>
 
   <button id="honkBtn" class="honk" aria-label="Hupe">HUP</button>
+  <button id="gasBtn" class="gas" aria-label="Gaspedal">GAS</button>
 
   <div id="rotateHint" class="rotate-hint">
     <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -320,7 +333,7 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 // Drei Spuren auf einer breiten Strecke. Die Spielfigur steuert über carX,
 // Gegner haben feste Spuren. Alle haben eine "distance" entlang der
 // Rennstrecke (0 am Start, TRACK_LENGTH am Ziel).
-const BASE_SPEED    = 240;         // typische Spieler-Zielgeschwindigkeit (Units/s)
+const MAX_SPEED     = 300;         // Max-Speed wenn Gaspedal voll gedrückt (Units/s)
 const LANES         = [-0.65, 0, 0.65];
 const SCROLL_FACTOR = 0.0022;      // Wie schnell Welt an Kamera vorbeirauscht
 const HORIZON_RATIO = 0.42;
@@ -333,10 +346,10 @@ const world = {
   scroll:0,
   carX:0,                 // -1..+1 Lateral-Position
   tilt:0,
+  throttle:0,             // 0..1 aus dem Gaspedal
   // Spieler:
   playerDistance:0,
   playerSpeed:0,
-  playerTargetSpeed:BASE_SPEED,
   // Gegner — werden beim Start in Lanes sortiert platziert
   opponents:[],
   // Pylonen (nicht-Auto-Hindernisse), vorgeneriert:
@@ -346,6 +359,19 @@ const world = {
   raceTime:0,
   finishResult:null       // {place, time}
 };
+
+// ══════════ Streckenführung mit Kurven ══════════
+// curveOffsetAt(d) liefert einen "Welt-X-Versatz" der Straßenmitte bei
+// Welt-Distanz d. Die Überlagerung mehrerer Sinus-Kurven ergibt eine
+// abwechslungsreiche Strecke mit sanften Links- und Rechts-Biegungen.
+function curveOffsetAt(d){
+  return Math.sin(d * 0.011) * 160 + Math.cos(d * 0.0048) * 90;
+}
+// Ableitung (numerisch) für die Drift-Kraft auf den Spieler
+function curveSlopeAt(d){
+  const e = 1;
+  return (curveOffsetAt(d + e) - curveOffsetAt(d - e)) / (2 * e);
+}
 
 const CAR_COLORS = ['#2563eb','#16a34a','#f59e0b','#8b5cf6','#ec4899','#64748b'];
 
@@ -373,6 +399,7 @@ function initRace(){
   }
   world.playerDistance = 0;
   world.playerSpeed = 0;
+  world.throttle = 0;
   world.carX = LANES[1]; // Spieler startet in Mittelspur
   world.tilt = 0;
   world.scroll = 0;
@@ -381,6 +408,8 @@ function initRace(){
   world.raceTime = 0;
   world.finishResult = null;
   steer.baseline = null;
+  const gb = document.getElementById('gasBtn');
+  if (gb) gb.classList.remove('pressed');
 }
 
 function checkOrientation(){
@@ -402,7 +431,13 @@ function project(laneRel, z){
   const roadHalfBase = Math.min(W * 0.72, 620);
   const roadHalfTop  = 20;
   const roadHalf = roadHalfTop + (roadHalfBase - roadHalfTop) * depth;
-  const x = W/2 + laneRel * roadHalf;
+
+  // Kurve: wie stark ist die Straßenmitte an dieser Welt-Distanz versetzt?
+  const worldDist = world.playerDistance + z * VISION_RANGE;
+  const curveX = curveOffsetAt(worldDist) - curveOffsetAt(world.playerDistance);
+  const curveLateral = curveX * (1 - depth); // am Horizont voll, am Auto 0
+
+  const x = W/2 + curveLateral + laneRel * roadHalf;
   const scale = 0.08 + depth * 0.92;
   return { x, y, scale, roadHalf };
 }
@@ -432,8 +467,7 @@ function drawRoad(dt){
   ctx.ellipse(W/2, hy - 6, 50, 12, 0, 0, Math.PI*2);
   ctx.fill();
 
-  world.scroll = (world.scroll + world.speed * dt * SCROLL_FACTOR) % 1;
-
+  // scroll wird jetzt in updateRace() basierend auf playerSpeed hochgezählt
   const SEG = 18;
   for (let i = 0; i < SEG; i++){
     const zNear = 1 - ((i     + world.scroll) / SEG);
@@ -444,10 +478,11 @@ function drawRoad(dt){
     const pf = project(0, Math.max(0, zFar));
     const yN = pn.y, yF = pf.y;
     const hN = pn.roadHalf, hF = pf.roadHalf;
-    // leichte Parallaxe beim Lenken
-    const camShift = -world.carX * 0.15;
-    const xN = W/2 + camShift * hN;
-    const xF = W/2 + camShift * hF;
+    // project() liefert schon die Kurven-Verschiebung; zusätzlich leichte
+    // Parallaxe durch Lenken, damit das Lenkgefühl stimmt
+    const parallax = -world.carX * 0.12;
+    const xN = pn.x + parallax * hN;
+    const xF = pf.x + parallax * hF;
 
     // Gras links/rechts (abwechselnde Grüntöne für Bewegungs-Illusion)
     ctx.fillStyle = (i & 1) ? '#2f5c1f' : '#264d18';
@@ -672,16 +707,35 @@ function updateRace(dt){
 
   world.raceTime += dt;
 
-  // Spieler beschleunigt/verzögert sanft auf Zielgeschwindigkeit
-  world.playerSpeed += (world.playerTargetSpeed - world.playerSpeed) * Math.min(1, dt * 1.6);
+  // Spieler: Zielgeschwindigkeit hängt am Gaspedal (0..1).
+  // Ohne Gas geht die Geschwindigkeit runter auf 0 → Auto bleibt stehen.
+  const playerTargetSpeed = MAX_SPEED * world.throttle;
+  const accel = world.throttle > 0 ? 1.8 : 1.1; // beim Lupfen sanfter auslaufen
+  world.playerSpeed += (playerTargetSpeed - world.playerSpeed) * Math.min(1, dt * accel);
+  if (world.playerSpeed < 0.5 && world.throttle === 0) world.playerSpeed = 0;
   world.playerDistance += world.playerSpeed * dt * 0.18;
 
-  // Gegner — Zielgeschwindigkeit schwankt sanft (sinus + phase)
+  // Kurven-Drift: die Straße biegt sich, der Wagen wird zur Seite gezogen,
+  // wenn man nicht gegenlenkt. Drift ist proportional zur Krümmung und zur
+  // gefahrenen Strecke pro Frame.
+  const distCovered = world.playerSpeed * dt * 0.18;
+  const slope = curveSlopeAt(world.playerDistance);
+  const roadHalfBase = Math.min(W * 0.72, 620);
+  world.carX -= (slope * distCovered) / roadHalfBase * 0.9;
+  world.carX = Math.max(-1, Math.min(1, world.carX));
+
+  // Gegner — breiter schwankende Zielgeschwindigkeiten, damit die Rangfolge
+  // sich deutlich ändert: manchmal ziehen sie vorbei, manchmal fallen sie zurück.
   for (const o of world.opponents){
-    const targetSpeed = o.baseSpeed + Math.sin(world.raceTime * 0.6 + o.phase) * 14;
-    o.speed += (targetSpeed - o.speed) * Math.min(1, dt * 1.4);
+    const targetSpeed = o.baseSpeed
+      + Math.sin(world.raceTime * 0.6 + o.phase) * 40
+      + Math.sin(world.raceTime * 0.17 + o.phase * 2) * 30;
+    o.speed += (targetSpeed - o.speed) * Math.min(1, dt * 1.3);
     o.distance += o.speed * dt * 0.18;
   }
+
+  // scroll-Offset für Straßen-Animation basierend auf gefühltem Speed
+  world.scroll = (world.scroll + world.playerSpeed * dt * SCROLL_FACTOR) % 1;
 
   if (world.hitCooldown > 0) world.hitCooldown -= dt;
 
@@ -719,9 +773,6 @@ function updateRace(dt){
   if (world.playerDistance >= TRACK_LENGTH){
     finishRace();
   }
-
-  // Scroll-Offset für Straßen-Animation — basiert auf Spieler-Speed
-  world.scroll = (world.scroll + world.playerSpeed * dt * SCROLL_FACTOR) % 1;
 }
 
 function currentRank(){
@@ -1061,6 +1112,33 @@ const honkBtn = document.getElementById('honkBtn');
 // pointerdown deckt Maus und Touch ab — click explizit unterdrücken, damit nicht doppelt
 honkBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); honk(); });
 honkBtn.addEventListener('click', (e)=>{ e.preventDefault(); });
+
+// ══════════ Gaspedal ══════════
+// Halten = beschleunigen, Loslassen = ausrollen bis Stillstand.
+// pointerdown/up deckt Maus und Touch ab. Über die CSS-Klasse 'pressed'
+// wird der Knopf optisch eingedrückt.
+const gasBtn = document.getElementById('gasBtn');
+function gasPress(e){
+  e.preventDefault();
+  world.throttle = 1;
+  gasBtn.classList.add('pressed');
+  // Audio-Context beim ersten Tap unlocken (iOS-Anforderung)
+  try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch{}
+}
+function gasRelease(e){
+  if (e) e.preventDefault();
+  world.throttle = 0;
+  gasBtn.classList.remove('pressed');
+}
+gasBtn.addEventListener('pointerdown', gasPress);
+gasBtn.addEventListener('pointerup', gasRelease);
+gasBtn.addEventListener('pointerleave', gasRelease);
+gasBtn.addEventListener('pointercancel', gasRelease);
+gasBtn.addEventListener('click', (e)=>{ e.preventDefault(); });
+// Sicherheit: wenn Finger den Knopf verlässt oder der Browser den Focus verliert,
+// Gas wegnehmen, damit das Auto nicht "weiterfährt" wenn der Touch abbricht.
+window.addEventListener('blur', () => gasRelease());
+document.addEventListener('visibilitychange', () => { if (document.hidden) gasRelease(); });
 
 // ══════════ Service Worker (PWA) ══════════
 if('serviceWorker' in navigator){
